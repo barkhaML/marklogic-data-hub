@@ -1,6 +1,7 @@
 import { protractor, browser, element, by, By, $, $$, ExpectedConditions as EC, ElementFinder } from 'protractor'
 import {pages} from '../page-objects/page';
-import auth from './auth'
+import auth from './auth';
+import flows from './flows';
 import create from './create';
 import runFlows from './run';
 import jobs from './jobs';
@@ -57,10 +58,11 @@ describe('QuickStart', function () {
   });
 
   auth(tmpobj.name);
+  flows(tmpobj.name);
   //create(tmpobj.name);
   //runFlows(tmpobj.name);
   //jobs();
   //runTraces();
   //mappings();
-  //uninstall(tmpobj.name);
+  uninstall(tmpobj.name);
 });

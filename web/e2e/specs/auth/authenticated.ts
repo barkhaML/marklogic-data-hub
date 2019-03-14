@@ -99,6 +99,7 @@ export default function(tmpDir) {
       browser.wait(EC.elementToBeClickable(loginPage.postInitTab));
     });
 
+/*
     it ('should copy run-flow-user.json file', function() {
       //copy run-flow-user.json
       console.log('copy run-flow-user.json');
@@ -126,6 +127,7 @@ export default function(tmpDir) {
       let noPiiUserFilePath = 'e2e/qa-data/users/no-pii-user.json';
       fs.copy(noPiiUserFilePath, tmpDir + '/src/main/ml-config/security/users/no-pii-user.json');
     });
+*/
 
     it ('Should be on the post init page', async function() {
       expect(loginPage.projectDirTab.isDisplayed()).toBe(false);
@@ -150,7 +152,7 @@ export default function(tmpDir) {
       expect(loginPage.installedCheckTab.isDisplayed()).toBe(false);
       expect(loginPage.requiresUpdateUpdateTab.isDisplayed()).toBe(false);
       expect(loginPage.preInstallCheckTab.isDisplayed()).toBe(false);
-      expect(loginPage.installerTab.isPresent()).toBe(false);
+      await expect(loginPage.installerTab.isPresent()).toBe(false);
       await loginPage.clickNext('EnvironmentTab');
       browser.wait(EC.visibilityOf(loginPage.loginTab));
     });
@@ -164,7 +166,7 @@ export default function(tmpDir) {
       expect(loginPage.installedCheckTab.isDisplayed()).toBe(false);
       expect(loginPage.requiresUpdateUpdateTab.isDisplayed()).toBe(false);
       expect(loginPage.preInstallCheckTab.isDisplayed()).toBe(false);
-      expect(loginPage.installerTab.isPresent()).toBe(false);
+      await expect(loginPage.installerTab.isPresent()).toBe(false);
       //negative test on login
       console.log('login negative test');
       await loginPage.loginAs('foo', 'foo');
@@ -187,7 +189,7 @@ export default function(tmpDir) {
       expect(loginPage.requiresUpdateUpdateTab.isDisplayed()).toBe(false);
       expect(loginPage.preInstallCheckTab.isDisplayed()).toBe(false);
       expect(loginPage.installerTab.isDisplayed()).toBe(true);
-      expect(loginPage.installProgress.isPresent()).toBe(false);
+      await expect(loginPage.installProgress.isPresent()).toBe(false);
       await loginPage.clickInstall();
     });
 
@@ -205,7 +207,7 @@ export default function(tmpDir) {
     });
 
     it ('should complete the install and go to the dashboard',  async function() {
-      browser.driver.sleep(5000);
+      await browser.driver.sleep(5000);
       console.log('clicking Finished button');
       await loginPage.clickFinished();
       console.log('loading dashboard page');
