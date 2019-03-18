@@ -20,7 +20,7 @@ fs.copySync('e2e/qa-data/data/input', path.join(tmpobj.name, 'input'));
 console.log('DIR: ' + tmpobj.name);
 
 describe('QuickStart', function () {
-  beforeAll(function (done) {
+  beforeAll(function () {
     //apply custom matchers
     jasmine.addMatchers(CUSTOM_MATCHERS)
 
@@ -52,7 +52,6 @@ describe('QuickStart', function () {
       // setting
       .then(() => browser.driver.manage().window().maximize())*/
       //.then(() => done())
-      done();
     });
   });
 
