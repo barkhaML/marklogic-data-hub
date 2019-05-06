@@ -36,17 +36,21 @@ import com.marklogic.client.eval.ServerEvaluationCall;
 import com.marklogic.client.ext.SecurityContextType;
 import com.marklogic.client.ext.modulesloader.ssl.SimpleX509TrustManager;
 import com.marklogic.client.io.*;
+import com.marklogic.hub.deploy.commands.LoadHubArtifactsCommand;
 import com.marklogic.hub.deploy.commands.LoadHubModulesCommand;
 import com.marklogic.hub.deploy.commands.LoadUserArtifactsCommand;
 import com.marklogic.hub.deploy.commands.LoadUserModulesCommand;
 import com.marklogic.hub.error.DataHubConfigurationException;
+import com.marklogic.hub.impl.DataHubImpl;
+import com.marklogic.hub.impl.HubConfigImpl;
+import com.marklogic.hub.impl.HubProjectImpl;
+import com.marklogic.hub.impl.Versions;
 import com.marklogic.hub.job.impl.JobMonitorImpl;
 import com.marklogic.hub.legacy.LegacyDebugging;
 import com.marklogic.hub.legacy.LegacyTracing;
 import com.marklogic.hub.legacy.flow.CodeFormat;
 import com.marklogic.hub.legacy.flow.DataFormat;
 import com.marklogic.hub.legacy.flow.FlowType;
-import com.marklogic.hub.impl.*;
 import com.marklogic.hub.legacy.impl.LegacyFlowManagerImpl;
 import com.marklogic.hub.scaffold.Scaffolding;
 import com.marklogic.hub.util.ComboListener;
@@ -124,6 +128,9 @@ public class HubTestBase {
     protected LoadHubModulesCommand loadHubModulesCommand;
 
     @Autowired
+    protected LoadHubArtifactsCommand loadHubArtifactsCommand;
+
+    @Autowired
     protected LoadUserModulesCommand loadUserModulesCommand;
 
     @Autowired
@@ -136,7 +143,7 @@ public class HubTestBase {
     protected MappingManager mappingManager;
 
     @Autowired
-    protected StepManager stepManager;
+    protected StepDefinitionManager stepDefinitionManager;
 
     @Autowired
     protected LegacyFlowManagerImpl fm;
@@ -185,7 +192,7 @@ public class HubTestBase {
     private  static boolean sslRun = false;
     private  static boolean certAuth = false;
     public static SSLContext certContext;
-    static SSLContext flowdevelopercertContext;
+    static SSLContext flowDevelopercertContext;
     static SSLContext flowOperatorcertContext;
     private  Properties properties = new Properties();
     public  GenericDocumentManager stagingDocMgr;
@@ -200,7 +207,7 @@ public class HubTestBase {
         try {
             installCARootCertIntoStore(getResourceFile("ssl/ca-cert.crt"));
             certContext = createSSLContext(getResourceFile("ssl/client-cert.p12"));
-            flowdevelopercertContext = createSSLContext(getResourceFile("ssl/client-flow-developer.p12"));
+            flowDevelopercertContext = createSSLContext(getResourceFile("ssl/client-flow-developer.p12"));
             flowOperatorcertContext = createSSLContext(getResourceFile("ssl/client-flow-operator.p12"));
             System.setProperty("hubProjectDir", PROJECT_PATH);
         } catch (Exception e) {
@@ -263,7 +270,7 @@ public class HubTestBase {
         secUser = properties.getProperty("mlSecurityUsername");
         secPassword = properties.getProperty("mlSecurityPassword");
         flowRunnerUser = properties.getProperty("mlFlowOperatorUserName");
-        flowRunnerPassword = properties.getProperty("mlFlowOperatorUserPassword");
+        flowRunnerPassword = properties.getProperty("mlFlowOperatorPassword");
         String isHostLB = properties.getProperty("mlIsHostLoadBalancer");
         if (isHostLB != null) {
             isHostLoadBalancer = Boolean.parseBoolean(isHostLB);
@@ -331,7 +338,7 @@ public class HubTestBase {
             if (isCertAuth()) {
                 return DatabaseClientFactory.newClient(
                     host, port, dbName,
-                    new DatabaseClientFactory.CertificateAuthContext((user == flowRunnerUser) ? flowOperatorcertContext : flowdevelopercertContext, SSLHostnameVerifier.ANY),
+                    new DatabaseClientFactory.CertificateAuthContext((user == flowRunnerUser) ? flowOperatorcertContext : flowDevelopercertContext, SSLHostnameVerifier.ANY),
                     DatabaseClient.ConnectionType.GATEWAY);
             } else if (isSslRun()) {
                 switch (authMethod) {
@@ -351,11 +358,11 @@ public class HubTestBase {
         } else {
             if (isCertAuth()) {
                 /*certContext = createSSLContext(getResourceFile("ssl/client-cert.p12"));
-                flowdevelopercertContext = createSSLContext(getResourceFile("ssl/client-flow-developer.p12"));
+                flowDevelopercertContext = createSSLContext(getResourceFile("ssl/client-flow-developer.p12"));
                 flowOperatorcertContext = createSSLContext(getResourceFile("ssl/client-flow-operator.p12"));*/
                 return DatabaseClientFactory.newClient(
                     host, port, dbName,
-                    new DatabaseClientFactory.CertificateAuthContext((user == flowRunnerUser) ? flowOperatorcertContext : flowdevelopercertContext, SSLHostnameVerifier.ANY));
+                    new DatabaseClientFactory.CertificateAuthContext((user == flowRunnerUser) ? flowOperatorcertContext : flowDevelopercertContext, SSLHostnameVerifier.ANY));
             } else if (isSslRun()) {
                 switch (authMethod) {
                     case DIGEST: return DatabaseClientFactory.newClient(host, port, dbName, new DatabaseClientFactory.DigestAuthContext(user, password)
@@ -407,7 +414,7 @@ public class HubTestBase {
         LegacyTracing.create(stagingClient).disable();
     }
 
-    protected HubConfig getFlowDeveloperConfig(String projectDir) {
+    protected HubConfig getDataHubAdminConfig(String projectDir) {
         if (isSslRun() || isCertAuth()) {
             certInit();
         }
@@ -417,7 +424,7 @@ public class HubTestBase {
         return adminHubConfig;
     }
 
-    protected HubConfigImpl getFlowDeveloperConfig() {
+    protected HubConfigImpl getDataHubAdminConfig() {
         if (isSslRun() || isCertAuth()) {
             certInit();
         }
@@ -526,9 +533,9 @@ public class HubTestBase {
             appConfig.setAppServicesCertFile("src/test/resources/ssl/client-flow-developer.p12");
             adminHubConfig.setCertFile(DatabaseKind.STAGING, "src/test/resources/ssl/client-flow-developer.p12");
             adminHubConfig.setCertFile(DatabaseKind.FINAL, "src/test/resources/ssl/client-flow-developer.p12");
-            adminHubConfig.setSslContext(DatabaseKind.JOB,flowdevelopercertContext);
-            manageConfig.setSslContext(flowdevelopercertContext);
-            adminConfig.setSslContext(flowdevelopercertContext);
+            adminHubConfig.setSslContext(DatabaseKind.JOB, flowDevelopercertContext);
+            manageConfig.setSslContext(flowDevelopercertContext);
+            adminConfig.setSslContext(flowDevelopercertContext);
             
             appConfig.setAppServicesCertPassword("abcd");
             appConfig.setAppServicesTrustManager((X509TrustManager) tmf.getTrustManagers()[0]);
@@ -744,7 +751,7 @@ public class HubTestBase {
                     handle.setFormat(Format.TEXT);
             }
             DocumentMetadataHandle permissions = new DocumentMetadataHandle()
-                .withPermission(getFlowDeveloperConfig().getflowOperatorRoleName(), DocumentMetadataHandle.Capability.EXECUTE, UPDATE, READ);
+                .withPermission(getDataHubAdminConfig().getFlowOperatorRoleName(), DocumentMetadataHandle.Capability.EXECUTE, UPDATE, READ);
             writeSet.add(path, permissions, handle);
         });
         modMgr.write(writeSet);
@@ -755,7 +762,7 @@ public class HubTestBase {
         InputStreamHandle handle = new InputStreamHandle(HubTestBase.class.getClassLoader().getResourceAsStream(localPath));
         String ext = FilenameUtils.getExtension(path);
         DocumentMetadataHandle permissions = new DocumentMetadataHandle()
-            .withPermission(getFlowDeveloperConfig().getflowOperatorRoleName(), DocumentMetadataHandle.Capability.EXECUTE, UPDATE, READ);
+            .withPermission(getDataHubAdminConfig().getFlowOperatorRoleName(), DocumentMetadataHandle.Capability.EXECUTE, UPDATE, READ);
         switch(ext) {
         case "xml":
             handle.setFormat(Format.XML);
@@ -917,6 +924,18 @@ public class HubTestBase {
 
         loadUserArtifactsCommand.setForceLoad(force);
         commands.add(loadUserArtifactsCommand);
+
+        SimpleAppDeployer deployer = new SimpleAppDeployer(((HubConfigImpl)hubConfig).getManageClient(), ((HubConfigImpl)hubConfig).getAdminManager());
+        deployer.setCommands(commands);
+        deployer.deploy(hubConfig.getAppConfig());
+    }
+
+    protected void installHubArtifacts(HubConfig hubConfig, boolean force) {
+        logger.debug("Installing hub artifacts into MarkLogic");
+        List<Command> commands = new ArrayList<>();
+
+        loadHubArtifactsCommand.setForceLoad(force);
+        commands.add(loadHubArtifactsCommand);
 
         SimpleAppDeployer deployer = new SimpleAppDeployer(((HubConfigImpl)hubConfig).getManageClient(), ((HubConfigImpl)hubConfig).getAdminManager());
         deployer.setCommands(commands);

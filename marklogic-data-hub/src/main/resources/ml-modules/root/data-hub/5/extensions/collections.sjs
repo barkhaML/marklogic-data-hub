@@ -19,10 +19,27 @@ const datahub = new DataHub();
 
 function get(context, params) {
   let resp;
-  let database = params.database;
+  let database = params.database ? params.database.trim() : null;
+  let sourceQuery = params.sourceQuery ? params.sourceQuery.trim() : null;
+  let limit = params.count || 1;
 
   try {
-    resp = xdmp.eval("cts.collections(null, ['map'])", null, {database: xdmp.database(database)});
+    if (sourceQuery) {
+      resp = [];
+
+      let docs = xdmp.eval("fn.subsequence(cts.search(" + sourceQuery + ", ['unfiltered', 'unchecked', 'unfaceted']), 1, " + limit + ")", null, {database: xdmp.database(database)});
+      docs = docs.toArray();
+      let i;
+      for (i in docs) {
+        let obj = {
+          "uri": xdmp.nodeUri(docs[i]),
+          "docs": docs[i]
+        };
+        resp.push(obj);
+      }
+    } else {
+      resp = xdmp.eval("cts.collections(null, ['map'])", null, {database: xdmp.database(database)});
+    }
   } catch (err) {
     datahub.debug.log(err);
   }

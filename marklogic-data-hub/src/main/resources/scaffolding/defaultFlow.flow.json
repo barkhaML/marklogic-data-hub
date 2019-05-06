@@ -1,5 +1,5 @@
 {
-  "name": "defaultFlow",
+  "name": "%%mlFlowName%%",
   "description": "This is the default flow containing all of the default steps",
   "batchSize": 100,
   "threadCount": 4,
@@ -8,29 +8,37 @@
   },
   "steps": {
     "1": {
-      "language": "zxx",
-      "name": "default-ingest",
-      "type": "INGESTION",
-      "modulePath": "/data-hub/5/builtins/steps/ingest/default/main.sjs",
-      "customHook": {
+      "name": "default-ingestion-step",
+      "description": "This is the default ingestion step",
+      "stepDefinitionName": "default-ingestion",
+      "stepDefinitionType": "INGESTION",
+      "customHook": {},
+      "fileLocations": {
+        "inputFilePath": "path/to/folder",
+        "outputURIReplacement": "output/URI,'substitute/URI'",
+        "inputFileType": "json"
       },
       "options": {
+        "targetDatabase": "%%mlStagingDbName%%",
         "sourceQuery": null,
         "outputFormat": "json",
         "collections": [
-          "default-ingest"
+          "default-ingestion"
         ]
       }
     },
     "2": {
-      "language": "zxx",
-      "name": "default-mapping",
-      "type": "MAPPING",
-      "modulePath": "/data-hub/5/builtins/steps/mapping/default/main.sjs",
+      "name": "default-mapping-step",
+      "description": "This is the default mapping step",
+      "stepDefinitionName": "default-mapping",
+      "stepDefinitionType": "MAPPING",
       "options": {
-        "sourceQuery": "cts.uris(null, null, cts.collectionQuery('default-ingest'))",
+        "sourceDatabase": "%%mlStagingDbName%%",
+        "targetDatabase": "%%mlFinalDbName%%",
+        "sourceQuery": "cts.collectionQuery('default-ingestion')",
         "collections": [
-          "default-mapping"
+          "default-mapping",
+          "mdm-content"
         ],
         "mapping": {
           "name": "mapping-name",
@@ -39,12 +47,15 @@
       }
     },
     "3": {
-      "language": "zxx",
-      "name": "default-mastering",
-      "type": "MASTERING",
-      "modulePath": "/data-hub/5/builtins/steps/master/default/main.sjs",
+      "name": "default-mastering-step",
+      "description": "This is the default mastering step",
+      "stepDefinitionName": "default-mastering",
+      "stepDefinitionType": "MASTERING",
       "options": {
-        "sourceQuery": "cts.uris(null, null, cts.collectionQuery('default-mapping'))",
+        "sourceDatabase": "%%mlFinalDbName%%",
+        "targetDatabase": "%%mlFinalDbName%%",
+        "targetEntity": "entity-name",
+        "sourceQuery": "cts.andQuery([cts.collectionQuery('default-mapping'),cts.collectionQuery('mdm-content')])",
         "collections": [
           "default-mastering, mastered"
         ]

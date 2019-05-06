@@ -1,63 +1,81 @@
+import {protractor} from "protractor";
 import {AppPage} from "../appPage";
-import { pages } from '../page';
+import {pages} from '../page';
 import {by, element} from "protractor";
 
 export class IngestStep extends AppPage {
   
   get inputFilePath() {
-    return element(by.css("current-folder input"));
+    return element(by.css(".folder-path input"));
   }
 
   async setInputFilePath(filePath: string) {
     let inputField = this.inputFilePath;
     await inputField.clear();
-    return await inputField.sendKeys(filePath);  
+    await inputField.sendKeys(filePath);  
+    await inputField.sendKeys(protractor.Key.ENTER);
   }
 
-  get fileTypeDropDown() {
-    return element(by.id("file_type_select"));
+  get sourceFileTypeDropDown() {
+    return element(by.id("source-file-type-select"));
   }
 
-  async clickFileTypeDropDown() {
-    let dropDown = this.fileTypeDropDown;
+  async clickSourceFileTypeDropDown() {
+    let dropDown = this.sourceFileTypeDropDown;
+    return await dropDown.click();
+  }
+  
+  /**
+   * @param option = [JSON|XML|Binary|CSV|Text]
+   */
+  sourceFileTypeOptions(option: string) {
+    return element(by.cssContainingText('mat-option .mat-option-text', option));
+  }
+
+  async clickSourceFileTypeOption(option: string) {
+    let sourceFileTypeOption = this.sourceFileTypeOptions(option);
+    return await sourceFileTypeOption.click();
+  }
+
+  get targetFileTypeDropDown() {
+    return element(by.id("target-file-type-select"));
+  }
+
+  async clickTargetFileTypeDropDown() {
+    let dropDown = this.targetFileTypeDropDown;
     return await dropDown.click();
   }
 
-  fileTypeOptions(option: string) {
-    return element(by.css(`mat-option[ng-reflect-value="${option}"]`));
+  /**
+   * @param option = [JSON|XML|Binary|Text]
+   */
+  targetFileTypeOptions(option: string) {
+    return element(by.cssContainingText('mat-option .mat-option-text', option));
   }
 
-  async clickFileTypeOption(option: string) {
-    let fileTypeOption = this.fileTypeOptions(option);
-    return await fileTypeOption.click();
+  async clickTargetFileTypeOption(option: string) {
+    let targetFileTypeOption = this.targetFileTypeOptions(option);
+    return await targetFileTypeOption.click();
   }
 
-  get outputFileTypeDropDown() {
-    return element(by.css(`mat-select[ng-reflect-name="doctype" div.mat-select-arrow`));
+  get targetPermissions() {
+    return element(by.id("target-permissions"));  
   }
 
-  async clickOutputFileTypeDropDown() {
-    let dropDown = this.outputFileTypeDropDown;
-    return await dropDown.click();
-  }
-
-  outputFileTypeOptions(option: string) {
-    return element(by.css(`mat-option[ng-reflect-value="${option}"]`));
-  }
-
-  async clickoutputFileTypeOption(option: string) {
-    let outputFileTypeOption = this.outputFileTypeOptions(option);
-    return await outputFileTypeOption.click();
-  }
-
-  get inputPermissions() {
-    return element(by.css(`input[ng-reflect-name="permissions"]`));  
-  }
-
-  async setInputPermissions(permissions: string) {
-    let inputField = this.inputPermissions;
+  async setTargetPermissions(permissions: string) {
+    let inputField = this.targetPermissions;
     await inputField.clear();
     return await inputField.sendKeys(permissions);  
+  }
+  
+  get targetUriReplace() {
+    return element(by.id("target-uri-replace"));  
+  }
+
+  async setTargetUriReplace(uriReplace: string) {
+    let inputField = this.targetUriReplace;
+    await inputField.clear();
+    return await inputField.sendKeys(uriReplace);  
   }
 }
 

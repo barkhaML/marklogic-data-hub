@@ -4,6 +4,7 @@ import {ConfirmationDialogComponent} from "../../../common";
 import {FlowSettingsDialogComponent} from "./flow-settings-dialog.component";
 import {Flow} from "../../models/flow.model";
 import * as moment from 'moment';
+import * as _ from "lodash";
 import {RunFlowDialogComponent} from "../../edit-flow/ui/run-flow-dialog.component";
 
 @Component({
@@ -18,9 +19,12 @@ export class ManageFlowsUiComponent implements OnInit, AfterViewInit {
   @Output() deleteFlow = new EventEmitter();
   @Output() createFlow = new EventEmitter();
   @Output() saveFlow = new EventEmitter();
-  @Output() redeployAll = new EventEmitter();
+  @Output() runFlow = new EventEmitter();
+  @Output() stopFlow = new EventEmitter();
+  @Output() redeployModules = new EventEmitter();
 
   dataSource: MatTableDataSource<Flow>;
+  runningStatus = false;
 
   @ViewChild(MatTable)
   table: MatTable<any>;
@@ -53,8 +57,15 @@ export class ManageFlowsUiComponent implements OnInit, AfterViewInit {
       data: {steps: flow.steps}
     });
 
-    dialogRef.afterClosed().subscribe(result => {
+    dialogRef.afterClosed().subscribe(response => {
       console.log('The run dialog was closed');
+      if ( response ) {
+        const runObject = {
+          id: flow.id,
+          runArray: response
+        };
+        this.runFlow.emit(runObject);
+      }
     });
   }
 
@@ -78,7 +89,7 @@ export class ManageFlowsUiComponent implements OnInit, AfterViewInit {
     });
     dialogRef.afterClosed().subscribe(result => {
       if(!!result){
-        this.redeployAll.emit();
+        this.redeployModules.emit();
       }
     });
   }
@@ -86,7 +97,11 @@ export class ManageFlowsUiComponent implements OnInit, AfterViewInit {
   openFlowSettingsDialog(flowToEdit: Flow): void {
     const dialogRef = this.dialog.open(FlowSettingsDialogComponent, {
       width: '500px',
-      data: {flow: flowToEdit}
+      data: {
+        flow: flowToEdit,
+        flowNames: _.map(this.flows, flow => flow.name),
+        isUpdate: !!flowToEdit
+      }
     });
     dialogRef.afterClosed().subscribe(result => {
       if (!!result) {
@@ -99,13 +114,44 @@ export class ManageFlowsUiComponent implements OnInit, AfterViewInit {
     });
   }
 
+  openStopDialog(flow: Flow): void {
+    const dialogRef = this.dialog.open(ConfirmationDialogComponent, {
+      width: '350px',
+      data: {title: `${flow.name} is running a job`, confirmationMessage: `Stop the job for "${flow.name}"?`}
+    });
+
+    dialogRef.afterClosed().subscribe(result => {
+      if(!!result){
+        this.stopFlow.emit(flow.id);
+      }
+    });
+  }
+
   renderRows(): void {
     this.updateDataSource();
     this.table.renderRows();
   }
 
   friendlyDate(dt): string {
-    return (dt) ? moment(dt).fromNow() : '';
+    return (dt) ? _.capitalize(moment(dt).fromNow()) : '';
+  }
+  formatStatus(status):string {
+    return _.capitalize(status.replace(/_/g,' ').replace(/-/g,' '));
+  }
+
+  checkRunStatus(flow: Flow): boolean {
+    if ( flow.latestJob && flow.latestJob.status ) {
+      let runStatus = flow.latestJob.status.replace('_', ' ');
+      runStatus = runStatus.replace('-', ' ');
+      runStatus = runStatus.split(' ');
+      if ( runStatus[0] === 'running' ) {
+        return false;
+      } else {
+        return true;
+      }
+    } else {
+      return true;
+    }
   }
 
 }

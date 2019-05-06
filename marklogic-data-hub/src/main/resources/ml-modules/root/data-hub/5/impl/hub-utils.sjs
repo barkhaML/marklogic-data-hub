@@ -51,7 +51,7 @@ class HubUtils {
     for (let content of writeQueue) {
       let context = (content.context||{});
       let permissions = (basePermissions || []).concat((context.permissions||[]));
-      let collections = baseCollections.concat((context.collections||[]));
+      let collections = fn.distinctValues(Sequence.from(baseCollections.concat((context.collections||[]))));
       let metadata = context.metadata;
       xdmp.documentInsert(content.uri, content.value, {permissions, collections, metadata});
     }`,
@@ -125,7 +125,7 @@ class HubUtils {
   normalizeToSequence(value) {
    if (value instanceof Sequence) {
      return value;
-   } else if (Array.isArray(value)) {
+   } else if (value.constructor === Array) {
      return Sequence.from(value);
    } else {
      return Sequence.from([value]);
@@ -150,6 +150,17 @@ class HubUtils {
        newInstance[key] = instance[key];
      }
      return newInstance;
+  }
+
+  parsePermissions(permissionsTest = "") {
+    let permissionParts = permissionsTest.split(",").filter((val) => val);
+    let permissions = [];
+    let permissionRoles = permissionParts.filter((val, index) => !(index % 2));
+    let permissionCapabilities = permissionParts.filter((val, index) => index % 2);
+    for (let i = 0; i < permissionRoles.length; i++) {
+      permissions.push(xdmp.permission(permissionRoles[i], permissionCapabilities[i]));
+    }
+    return permissions;
   }
 
 }

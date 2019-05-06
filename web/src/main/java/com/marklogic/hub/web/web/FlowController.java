@@ -17,7 +17,6 @@ package com.marklogic.hub.web.web;
 
 import com.marklogic.hub.error.DataHubProjectException;
 import com.marklogic.hub.web.exception.DataHubException;
-import com.marklogic.hub.web.exception.NotFoundException;
 import com.marklogic.hub.web.model.FlowStepModel;
 import com.marklogic.hub.web.model.StepModel;
 import com.marklogic.hub.web.service.FlowManagerService;
@@ -38,8 +37,13 @@ public class FlowController {
     @RequestMapping(method = RequestMethod.GET)
     @ResponseBody
     public ResponseEntity<?> getFlows() {
-        List<FlowStepModel> flowSteps = flowManagerService.getFlows();
-        return new ResponseEntity<List<FlowStepModel>>(flowSteps, HttpStatus.OK);
+        List<FlowStepModel> flowSteps;
+        try {
+            flowSteps = flowManagerService.getFlows();
+        } catch (Exception ex) {
+            throw new DataHubException(ex.getMessage(), ex);
+        }
+        return new ResponseEntity<>(flowSteps, HttpStatus.OK);
     }
 
     @RequestMapping(method = RequestMethod.POST)
@@ -51,10 +55,10 @@ public class FlowController {
             if (flow == null) {
                 throw new DataHubException("Flow request payload is invalid.");
             }
-        } catch (DataHubProjectException dpe) {
+        } catch (Exception dpe) {
             throw new DataHubException(dpe.getMessage());
         }
-        return new ResponseEntity<FlowStepModel>(flow, HttpStatus.OK);
+        return new ResponseEntity<>(flow, HttpStatus.OK);
     }
 
     @RequestMapping(value = "/{flowName}", method = RequestMethod.PUT)
@@ -63,10 +67,10 @@ public class FlowController {
         FlowStepModel flow = null;
         try {
             flow = flowManagerService.createFlow(flowJson, false);
-        } catch (DataHubProjectException dpe) {
+        } catch (Exception dpe) {
             throw new DataHubException(dpe.getMessage());
         }
-        return new ResponseEntity<FlowStepModel>(flow, HttpStatus.OK);
+        return new ResponseEntity<>(flow, HttpStatus.OK);
     }
 
     @RequestMapping(value = "/{flowName}", method = RequestMethod.GET)
@@ -74,14 +78,11 @@ public class FlowController {
     public ResponseEntity<?> getFlow(@PathVariable String flowName) {
         FlowStepModel flow = null;
         try {
-            flow = flowManagerService.getFlow(flowName);
-            if (flow == null) {
-                throw new NotFoundException();
-            }
+            flow = flowManagerService.getFlow(flowName, false);
         } catch (DataHubProjectException dpe) {
             throw new DataHubException(dpe.getMessage());
         }
-        return new ResponseEntity<FlowStepModel>(flow, HttpStatus.OK);
+        return new ResponseEntity<>(flow, HttpStatus.OK);
     }
 
     @RequestMapping(value = "/names/", method = RequestMethod.GET)
@@ -106,6 +107,13 @@ public class FlowController {
     @ResponseBody
     public List<StepModel> getSteps(@PathVariable String flowName) {
         return flowManagerService.getSteps(flowName);
+    }
+
+    @RequestMapping(value = "/{flowName}/steps/{stepId}", method = RequestMethod.GET)
+    @ResponseBody
+    public ResponseEntity<?> getStep(@PathVariable String flowName, @PathVariable String stepId) {
+        StepModel stepModel = flowManagerService.getStep(flowName, stepId);
+        return new ResponseEntity<>(stepModel, HttpStatus.OK);
     }
 
     @RequestMapping(value = "/{flowName}/steps", method = RequestMethod.POST)
@@ -133,13 +141,13 @@ public class FlowController {
     @ResponseBody
     public ResponseEntity<?> runFlow(@PathVariable String flowName, @RequestBody(required = false) List<String> steps) {
         FlowStepModel flow = flowManagerService.runFlow(flowName, steps);
-        return new ResponseEntity<FlowStepModel>(flow, HttpStatus.OK);
+        return new ResponseEntity<>(flow, HttpStatus.OK);
     }
 
     @RequestMapping(value = "/{flowName}/stop", method = RequestMethod.POST)
     @ResponseBody
     public ResponseEntity<?> stopFlow(@PathVariable String flowName) {
         FlowStepModel flow = flowManagerService.stop(flowName);
-        return new ResponseEntity<FlowStepModel>(flow, HttpStatus.OK);
+        return new ResponseEntity<>(flow, HttpStatus.OK);
     }
 }

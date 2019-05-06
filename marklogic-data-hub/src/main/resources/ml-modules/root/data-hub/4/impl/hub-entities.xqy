@@ -115,6 +115,16 @@ declare %private function hent:fix-options($nodes as node()*)
           <search:constraint name="Collection">
             <search:collection/>
           </search:constraint>,
+          <search:constraint name="createdByJob">
+            <search:value>
+              <search:field name="datahubCreatedByJob"/>
+            </search:value>
+          </search:constraint>,
+          <search:constraint name="createdByStep">
+            <search:value>
+              <search:field name="datahubCreatedByStep"/>
+            </search:value>
+          </search:constraint>,
           hent:fix-options(($n/@*, $n/node()))
         }
       case element(search:additional-query) return ()

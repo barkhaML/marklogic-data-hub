@@ -65,6 +65,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 import javax.annotation.PostConstruct;
 import java.io.File;
@@ -120,7 +121,21 @@ public class DataHubImpl implements DataHub {
         this._manageClient = hubConfig.getManageClient();
         this._adminManager = hubConfig.getAdminManager();
         this._databaseManager = new DatabaseManager(_manageClient);
-        this._serverManager = new ServerManager(_manageClient);
+        this._serverManager = constructServerManager(_manageClient, hubConfig);
+    }
+
+    /**
+     * Need to account for the group name in case the user has overridden the name of the "Default" group.
+     *
+     * @param manageClient
+     * @param hubConfig
+     * @return
+     */
+    protected ServerManager constructServerManager(ManageClient manageClient, HubConfig hubConfig) {
+        AppConfig appConfig = hubConfig.getAppConfig();
+        return appConfig != null ?
+            new ServerManager(manageClient, appConfig.getGroupName()) :
+            new ServerManager(manageClient);
     }
 
     @Override
@@ -159,7 +174,7 @@ public class DataHubImpl implements DataHub {
     }
 
     @Override
-    public InstallInfo isInstalled() {
+    public InstallInfo isInstalled() throws ResourceAccessException {
 
         InstallInfo installInfo = InstallInfo.create();
 
@@ -844,20 +859,31 @@ public class DataHubImpl implements DataHub {
 
     @Override
     public boolean upgradeHub(List<String> updatedFlows) throws CantUpgradeException {
-        boolean isHubInstalled = this.isInstalled().isInstalled();
-        String currentVersion = versions.getHubVersion();
-
+        boolean isHubInstalled;
+        try {
+            isHubInstalled = this.isInstalled().isInstalled();
+        } catch (ResourceAccessException e) {
+            isHubInstalled = false;
+        }
+        String currentVersion;
+        if (isHubInstalled) {
+            currentVersion = versions.getHubVersion();
+        } else {
+            currentVersion = versions.getDHFVersion();
+        }
         int compare = Versions.compare(currentVersion, MIN_UPGRADE_VERSION);
         if (compare == -1) {
             throw new CantUpgradeException(currentVersion, MIN_UPGRADE_VERSION);
         }
+        // make a second check against local version, if we checked the server
+        if (isHubInstalled) {
+            compare = Versions.compare(versions.getDHFVersion(), MIN_UPGRADE_VERSION);
+            if (compare == -1) {
+                throw new CantUpgradeException(versions.getDHFVersion(), MIN_UPGRADE_VERSION);
+            }
+        }
         boolean result = false;
         boolean alreadyInitialized = project.isInitialized();
-        String gradleVersion = versions.getDHFVersion();
-        compare = Versions.compare(gradleVersion, MIN_UPGRADE_VERSION);
-        if (compare == -1) {
-            throw new CantUpgradeException(gradleVersion, MIN_UPGRADE_VERSION);
-        }
         try {
             /*Ideally this should move to HubProject.upgradeProject() method
              * But since it requires 'hubConfig' and 'versions', for now 
@@ -865,8 +891,19 @@ public class DataHubImpl implements DataHub {
              */
             if(alreadyInitialized) {
                 // The version provided in "mlDHFVersion" property in gradle.properties.
-
+                String gradleVersion = versions.getDHFVersion();
                 File buildGradle = Paths.get(project.getProjectDirString(), "build.gradle").toFile();
+
+                // Back up the hub-internal-config and user-config directories in versions > 4.0
+                FileUtils.copyDirectory(project.getHubConfigDir().toFile(), project.getProjectDir().resolve(HubProject.HUB_CONFIG_DIR+"-"+gradleVersion).toFile());
+                FileUtils.copyDirectory(project.getUserConfigDir().toFile(), project.getProjectDir().resolve(HubProject.USER_CONFIG_DIR+"-"+gradleVersion).toFile());
+
+                // Gradle plugin uses a logging framework that is different from java api. Hence writing it to stdout as it is done in gradle plugin.
+                System.out.println("The "+ gradleVersion + " "+ HubProject.HUB_CONFIG_DIR +" is now moved to "+ HubProject.HUB_CONFIG_DIR+"-"+gradleVersion);
+                System.out.println("The "+ gradleVersion + " "+ HubProject.USER_CONFIG_DIR +" is now moved to "+ HubProject.USER_CONFIG_DIR+"-"+gradleVersion);
+                System.out.println("Please copy the custom database, server configuration files from " + HubProject.HUB_CONFIG_DIR+"-"+gradleVersion
+                    + " and "+ HubProject.USER_CONFIG_DIR+"-"+gradleVersion + " to their respective locations in  "+HubProject.HUB_CONFIG_DIR +" and "
+                    + HubProject.USER_CONFIG_DIR);
 
                 // replace the hub version in build.gradle
                 String text = FileUtils.readFileToString(buildGradle);
@@ -881,12 +918,6 @@ public class DataHubImpl implements DataHub {
 
             //now let's try to upgrade the directory structure
             hubConfig.getHubProject().upgradeProject();
-
-            if (isHubInstalled) {
-                runInDatabase("cts:uris(\"\", (), cts:and-not-query(cts:collection-query(\"hub-core-module\"), cts:document-query((\"/com.marklogic.hub/config.sjs\", \"/com.marklogic.hub/config.xqy\")))) ! xdmp:document-delete(.)", hubConfig.getDbName(DatabaseKind.MODULES));
-                this.hubInstallModules();
-                this.loadUserModules();
-            }
 
             //if none of this has thrown an exception, we're clear and can set the result to true
             result = true;

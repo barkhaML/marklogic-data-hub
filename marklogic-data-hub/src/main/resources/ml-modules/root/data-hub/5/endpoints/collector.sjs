@@ -28,7 +28,6 @@ const requestParams = new Map();
 parameters.queryParameter(requestParams, "flow-name",fn.true(),fn.false())
 parameters.queryParameter(requestParams, "options",fn.false(),fn.false())
 parameters.queryParameter(requestParams, "step",fn.false(),fn.false())
-parameters.queryParameter(requestParams, "job-id",fn.true(),fn.false())
 parameters.queryParameter(requestParams, "database",fn.true(),fn.false())
 
 if(method === 'GET') {
@@ -37,17 +36,8 @@ if(method === 'GET') {
   if (!step) {
     step = 1;
   }
-  const jobId = requestParams["job-id"];
-  const database = requestParams.database;
   let options = requestParams.options ? JSON.parse(requestParams.options) : {};
 
-  let jobDoc = datahub.jobs.getJobDocWithId(jobId);
-  try {
-    datahub.jobs.updateJob(jobId, jobDoc.job.lastAttemptedStep, jobDoc.job.lastCompletedStep, "running step " + step);
-  } catch (err) {
-    datahub.jobs.createJob(flowName, jobId);
-    datahub.jobs.updateJob(jobId, 0, 0, "running step " + step);
-  }
   let flowDoc= datahub.flow.getFlow(flowName);
   let resp;
   if (!fn.exists(flowDoc)) {
@@ -57,38 +47,40 @@ if(method === 'GET') {
     if (!stepDoc) {
       resp = fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([404, "Not Found", `The step number "${step}" of the flow was not found`]));
     }
-    let baseStep = datahub.flow.step.getStepByNameAndType(stepDoc.name, stepDoc.type);
+    let baseStep = datahub.flow.step.getStepByNameAndType(stepDoc.stepDefinitionName, stepDoc.stepDefinitionType);
     if (!baseStep) {
-      resp = fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([404, "Not Found", `A step with name "${stepDoc.name}" and type of "${stepDoc.type}" was not found`]));
+      resp = fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([404, "Not Found", `A step with name "${stepDoc.stepDefinitionName}" and type of "${stepDoc.stepDefinitionType}" was not found`]));
     }
-    let combinedOptions = Object.assign({}, baseStep.options, stepDoc.options, flowDoc.options, options);
+    let combinedOptions = Object.assign({}, baseStep.options, flowDoc.options, stepDoc.options, options);
+    const database = combinedOptions.sourceDatabase || requestParams.database;
     if (stepDoc) {
-      if(!combinedOptions.identifier && flowDoc.identifier) {
-        combinedOptions.identifier = flowDoc.identifier;
+      if(!combinedOptions.sourceQuery && flowDoc.sourceQuery) {
+        combinedOptions.sourceQuery = flowDoc.sourceQuery;
       }
-      let query = combinedOptions.identifier;
+      let query = combinedOptions.sourceQuery;
       if (query) {
         try {
-          resp = xdmp.eval(query, {options: options}, {database: xdmp.database(database)});
+          let urisEval;
+          if (/^\s*cts\.uris\(.*\)\s*$/.test(query)) {
+            urisEval = query;
+          } else {
+            urisEval = "cts.uris(null, null, " + query + ")";
+          }
+          resp = xdmp.eval(urisEval, {options: options}, {database: xdmp.database(database)});
         } catch (err) {
           //TODO log error message from 'err'
 
           datahub.debug.log(err);
-          let jobDoc = datahub.jobs.getJobDocWithId(jobId);
-          datahub.jobs.updateJob(jobId, step, jobDoc.job.lastCompletedStep, "failed");
           resp = fn.error(null, 'RESTAPI-INVALIDREQ', err);
         }
       } else {
         resp = fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([404, "Not Found", "The collector query was empty"]));
         datahub.debug.log("The collector query was empty");
-        let jobDoc = datahub.jobs.getJobDocWithId(jobId);
-        datahub.jobs.updateJob(jobId, step, jobDoc.job.lastCompletedStep, "failed");
       }
     } else {
       resp = fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([404, "Not Found", "The requested step was not found"]));
       datahub.debug.log("The requested step was not found");
-      let jobDoc = datahub.jobs.getJobDocWithId(jobId);
-      datahub.jobs.updateJob(jobId, step, jobDoc.job.lastCompletedStep, "failed");
+
     }
   }
   resp

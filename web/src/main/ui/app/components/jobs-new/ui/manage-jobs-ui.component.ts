@@ -1,15 +1,15 @@
 import {AfterViewInit, Component, EventEmitter, Input, OnInit, Output, ViewChild} from "@angular/core";
-import { Router } from "@angular/router";
+import {Router, ActivatedRoute, Params} from '@angular/router';
 import {MatDialog, MatPaginator, MatSort, MatTable, MatTableDataSource} from "@angular/material";
 import {ConfirmationDialogComponent} from "../../common";
-import {OutputDialogComponent} from "./output-dialog.component";
 import {StatusDialogComponent} from "./status-dialog.component";
-//import {Flow} from "../../models/flow.model";
 import * as moment from 'moment';
+import * as _ from "lodash";
 import { differenceInSeconds,
          differenceInMinutes,
          differenceInHours,
          differenceInDays } from 'date-fns';
+import {StepType} from "../../flows-new/models/step.model";
 
 @Component({
   selector: 'jobs-page-ui',
@@ -17,8 +17,10 @@ import { differenceInSeconds,
   styleUrls: ['./manage-jobs-ui.component.scss']
 })
 export class ManageJobsUiComponent implements OnInit, AfterViewInit {
-  displayedColumns = ['name', 'targetEntity', 'jobStatus', 'timeEnded', 'duration', 'committed', 'errors', 'actions'];
+  displayedColumns = ['name', 'status', 'endTime', 'duration', 'committed', 'errors', 'actions'];
   filterValues = {};
+  flowValues = [];
+  statusValues = [];
   @Input() jobs: Array<any> = [];
 
   dataSource: MatTableDataSource<any>;
@@ -29,20 +31,57 @@ export class ManageJobsUiComponent implements OnInit, AfterViewInit {
 
   constructor(
     public dialog: MatDialog,
-    private router: Router
+    private router: Router,
+    private activatedRoute: ActivatedRoute
   ){}
 
   ngOnInit() {
+    this.setJobsTargetDatabase();
     this.dataSource = new MatTableDataSource<any>(this.jobs);
     this.dataSource.sortingDataAccessor = (item, property) => {
       switch (property) {
         case 'name':
-          return item['flow'];
+          return item['flowName'];
         case 'duration':
-          return differenceInSeconds(item['timeStarted'], item['timeEnded']);
+          return differenceInSeconds(item['startTime'], item['endTime']);
+        case 'committed':
+          return item['successfulEvents'];
+        case 'errors':
+          return item['failedEvents'];
         default: return item[property];
       }
     };
+    // Check all filters across data source
+    this.dataSource.filterPredicate = (data: any, filterValues: string) => {
+      filterValues = JSON.parse(filterValues);
+      let result = true;
+      // If text entered, default to false and then check for matches
+      if (filterValues['text']) {
+        result = false;
+        if (data['flowName'].toLowerCase().indexOf(filterValues['text'].toLowerCase()) != -1 ||
+            data['id'].toLowerCase().indexOf(filterValues['text'].toLowerCase()) != -1 ||
+            data['status'].toLowerCase().indexOf(filterValues['text'].toLowerCase()) != -1 //||
+            // TODO handle search of numbers
+            // data['successfulEvents'].toString().indexOf(filterValues['text']) != -1 ||
+            // data['failedEvents'].toString().indexOf(filterValues['text']) != -1) {
+        ) {
+          result = true;
+        }
+      }
+      // If menu selected, set to false if no match
+      if (filterValues['flow'] &&
+          data['flowName'].indexOf(filterValues['flow']) == -1) {
+        result = false;
+      }
+      if (filterValues['jobStatus'] &&
+          data['status'].indexOf(filterValues['jobStatus']) == -1) {
+        result = false;
+      }
+      return result;
+    }
+    if (this.activatedRoute.snapshot.queryParams['flowName']) {
+      this.applyFilter('flow', this.activatedRoute.snapshot.queryParams['flowName']);
+    }
   }
 
   ngAfterViewInit() {
@@ -51,56 +90,41 @@ export class ManageJobsUiComponent implements OnInit, AfterViewInit {
   }
 
   updateDataSource() {
+    this.setJobsTargetDatabase();
     this.dataSource.data = this.jobs;
+  }
+
+  setJobsTargetDatabase() {
+    this.jobs.forEach((job) => {
+      job.steps.forEach((step) => {
+        if (step.targetDatabase) {
+          step.targetDatabase = /FINAL/.test(step.targetDatabase) ? 'FINAL' : 'STAGING';
+        } else if (step.stepDefinitionType.toLowerCase() === StepType.INGESTION.toLowerCase()) {
+          step.targetDatabase = 'STAGING';
+        } else {
+          step.targetDatabase = 'FINAL';
+        }
+        if (step.success) {
+          job.targetDatabase = step.targetDatabase;
+        }
+      });
+    });
   }
 
   applyFilter(menu: string, value: string) {
     this.filterValues[menu] = value;
-    // Check all filters across data source
-    this.dataSource.filterPredicate = (data: any, filterValues: string) => {
-      filterValues = JSON.parse(filterValues);
-      let result = true;
-      // If text entered, default to false and then check for matches
-      if (filterValues['text']) {
-        result = false;
-        if (data['flow'].indexOf(filterValues['text']) != -1 ||
-            data['jobId'].indexOf(filterValues['text']) != -1 ||
-            data['targetEntity'].indexOf(filterValues['text']) != -1 ||
-            data['jobStatus'].indexOf(filterValues['text']) != -1 ||
-            data['committed'].toString().indexOf(filterValues['text']) != -1 ||
-            data['errors'].toString().indexOf(filterValues['text']) != -1) {
-          result = true;
-        }
-      }
-      // If menu selected, set to false if no match
-      if (filterValues['flow'] &&
-          data['flow'].indexOf(filterValues['flow']) == -1) {
-        result = false;
-      }
-      if (filterValues['targetEntity'] &&
-          data['targetEntity'].indexOf(filterValues['targetEntity']) == -1) {
-        result = false;
-      }
-      if (filterValues['jobStatus'] &&
-          data['jobStatus'].indexOf(filterValues['jobStatus']) == -1) {
-        result = false;
-      }
-      return result;
-    }
     this.dataSource.filter = JSON.stringify(this.filterValues)
   }
 
-  openOutputDialog(job): void {
-    const dialogRef = this.dialog.open(OutputDialogComponent, {
-      width: '500px',
-      data: { output: 'The output content'}
-    });
+  clearFilters(): void {
+    this.filterValues = {};
+    this.dataSource.filter = JSON.stringify(this.filterValues)
   }
 
-  openStatusDialog(job): void {
+  openStatusDialog(details): void {
     const dialogRef = this.dialog.open(StatusDialogComponent, {
-      width: '500px',
-      data: { statusDetails: 'The status details content'}
+      width: '700px',
+      data: { statusDetails: details}
     });
   }
 
@@ -111,6 +135,8 @@ export class ManageJobsUiComponent implements OnInit, AfterViewInit {
   renderRows(): void {
     this.updateDataSource();
     this.table.renderRows();
+    this.flowValues = this.getMenuVals('flowName');
+    this.statusValues = this.getMenuVals('status');
   }
 
   friendlyDate(dt): string {
@@ -118,9 +144,15 @@ export class ManageJobsUiComponent implements OnInit, AfterViewInit {
   }
 
   friendlyDuration(dt1, dt2): any {
+    moment.relativeTimeThreshold('s', 60);
+    moment.relativeTimeThreshold('ss', 3);
     return (dt1 && dt2) ?
       moment.duration(moment(dt1).diff(moment(dt2))).humanize() :
       '';
+  }
+
+  formatStatus(status):string {
+    return _.capitalize(status.replace(/_/g,' ').replace(/-/g,' '));
   }
 
   getMenuVals(prop) {
@@ -129,6 +161,23 @@ export class ManageJobsUiComponent implements OnInit, AfterViewInit {
     let arr = Array.from(set);
     arr.unshift('');
     return arr;
+  }
+
+  hasOutput(job) {
+    let found = job.steps.find( step => {
+      return step.stepOutput && step.stepOutput.length > 0;
+    });
+    return found !== undefined;
+  }
+
+  getOutput(job) {
+    let output = '';
+    job.steps.forEach( step => {
+      console.log('step.stepOutput', step.stepOutput);
+      output = output + ((step.stepOutput) ? step.stepOutput[0] + '\n' : ' ');
+    })
+    console.log('output', output);
+    return output;
   }
 
 }

@@ -47,7 +47,8 @@ class Jobs {
        lastCompletedStep: 0 ,
        jobStatus: "started" ,
        timeStarted:  fn.currentDateTime(),
-       timeEnded: "N/A"
+       timeEnded: "N/A",
+       stepResponses :{}
      }
     };
 
@@ -131,6 +132,16 @@ class Jobs {
     return docs;
   }
 
+  getJobDocsByFlow(flowName) {
+    return this.hubutils.queryLatest(function() {
+      let query = [cts.collectionQuery('Job'),  cts.jsonPropertyValueQuery('flow', flowName, "case-insensitive")];
+      let jobDoc = cts.search(cts.andQuery(query));
+      if (jobDoc) {
+        return jobDoc.toObject();
+      }
+    }, this.config.JOBDATABASE);
+  }
+
   createBatch(jobId, step, stepNumber) {
     let batch = null;
     batch = {
@@ -189,9 +200,16 @@ class Jobs {
       docObj.batch.timeEnded = fn.currentDateTime();
     }
     if(error){
-      let stackTraceObj = error.stackFrames[0];
-      docObj.batch.fileName = stackTraceObj.uri;
-      docObj.batch.lineNumber = stackTraceObj.line;
+      // Sometimes we don't get the stackFrames
+      if (error.stackFrames) {
+        let stackTraceObj = error.stackFrames[0];
+        docObj.batch.fileName = stackTraceObj.uri;
+        docObj.batch.lineNumber = stackTraceObj.line;
+      // If we don't get stackFrames, see if we can get the stack
+      } else if (error.stack) {
+        docObj.batch.errorStack = error.stack;
+      }
+      docObj.batch.error = `${error.name || error.code}: ${error.message}`;
     }
     let cacheId = jobId + "-" + batchId;
     cachedBatchDocuments[cacheId] = docObj;

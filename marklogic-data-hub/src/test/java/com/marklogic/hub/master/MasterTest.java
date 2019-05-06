@@ -1,16 +1,12 @@
 package com.marklogic.hub.master;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marklogic.bootstrap.Installer;
 import com.marklogic.hub.*;
 import com.marklogic.hub.flow.Flow;
 import com.marklogic.hub.flow.FlowRunner;
 import com.marklogic.hub.flow.RunFlowResponse;
-import com.marklogic.hub.job.Job;
-import com.marklogic.hub.legacy.flow.*;
+import com.marklogic.hub.step.RunStepResponse;
 import com.marklogic.hub.util.HubModuleManager;
-import com.marklogic.hub.util.MlcpRunner;
 import org.custommonkey.xmlunit.XMLUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -65,7 +61,7 @@ public class MasterTest extends HubTestBase {
         clearDatabases(HubConfig.DEFAULT_FINAL_NAME, HubConfig.DEFAULT_STAGING_NAME, HubConfig.DEFAULT_JOB_NAME);
     }
     private void installProject() throws IOException, URISyntaxException {
-            String[] directoriesToCopy = new String[]{"flows", "steps", "plugins"};
+            String[] directoriesToCopy = new String[]{"input", "flows", "src", "step-definitions", "entities", "mappings"};
             for (final String subDirectory: directoriesToCopy) {
                 final Path subProjectPath = projectPath.resolve(subDirectory);
                 subProjectPath.toFile().mkdir();
@@ -76,14 +72,14 @@ public class MasterTest extends HubTestBase {
     }
 
     private void copyFileStructure(Path resourcePath, Path projectPath) throws IOException {
-        for (File childFile: getResourceFile(resourcePath.toString()).listFiles()) {
+        for (File childFile: getResourceFile(resourcePath.toString().replaceAll("\\\\","/")).listFiles()) {
             if (childFile.isDirectory()) {
                 Path subProjectPath = projectPath.resolve(childFile.getName());
                 subProjectPath.toFile().mkdir();
                 Path subResourcePath = resourcePath.resolve(childFile.getName());
                 copyFileStructure(subResourcePath, subProjectPath);
             } else {
-                Files.copy(getResourceStream(resourcePath.resolve(childFile.getName()).toString()), projectPath.resolve(childFile.getName()));
+                Files.copy(getResourceStream(resourcePath.resolve(childFile.getName()).toString().replaceAll("\\\\","/")), projectPath.resolve(childFile.getName()));
             }
         }
     }
@@ -103,53 +99,21 @@ public class MasterTest extends HubTestBase {
         getDataHub().clearDatabase(HubConfig.DEFAULT_STAGING_SCHEMAS_DB_NAME);
         assertEquals(0, getDocCount(HubConfig.DEFAULT_STAGING_SCHEMAS_DB_NAME, "http://marklogic.com/xdmp/tde"));
 
-        installUserModules(getFlowDeveloperConfig(), true);
+        installUserModules(getDataHubAdminConfig(), true);
 
         // Adding sleep to give the server enough time to act on triggers in both staging and final databases.
         Thread.sleep(1000);
-
-        String inputPath = getResourceFile("master-test/input/").getAbsolutePath();
-        String basePath = getResourceFile("master-test").getAbsolutePath();
-        JsonNode mlcpOptions;
-        try {
-            String optionsJson =
-                "{" +
-                    "\"input_file_path\":\"" + inputPath.replace("\\", "\\\\\\\\") + "\"," +
-                    "\"input_file_type\":\"\\\"documents\\\"\"," +
-                    "\"document_type\":\"\\\"json\\\"\"," +
-                    "\"output_collections\":\"\\\"mdm-content,default-ingest\\\"\"," +
-                    "\"output_permissions\":\"\\\"rest-reader,read,rest-writer,update\\\"\"," +
-                    "\"output_uri_replace\":\"\\\"" + basePath.replace("\\", "/").replaceAll("^([A-Za-z]):", "/$1:") + ",''\\\"\"" +
-                    "}";
-            mlcpOptions = new ObjectMapper().readTree(optionsJson);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        // TODO Is there a way to do this with updated flows?
-        LegacyFlow legacyFlow = LegacyFlowBuilder.newFlow()
-            .withEntityName("mdm-content")
-            .withName("default-ingest")
-            .withType(FlowType.INPUT)
-            .withCodeFormat(CodeFormat.JAVASCRIPT)
-            .withDataFormat(DataFormat.JSON)
-            .build();
-
-        MlcpRunner mlcpRunner = new MlcpRunner(null, "com.marklogic.hub.util.MlcpMain", getFlowDeveloperConfig(), legacyFlow, flowRunnerClient, mlcpOptions, null);
-        mlcpRunner.start();
-        try {
-            mlcpRunner.join();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
         Flow flow = flowManager.getFlow("myNewFlow");
         if (flow == null) {
             throw new Exception("myNewFlow Not Found");
         }
-        RunFlowResponse flowResponse = flowRunner.runFlow("myNewFlow", Arrays.asList("3"));
+        RunFlowResponse flowResponse = flowRunner.runFlow("myNewFlow", Arrays.asList("1","2","3"));
         flowRunner.awaitCompletion();
-        Job masterJob = flowResponse.getStepResponses().get("3");
-        assertTrue(masterJob.isSuccess());
-        assertEquals(40, getStagingDocCount("mdm-notification"));
-        assertEquals(10,getStagingDocCount("mdm-merged"));
+        RunStepResponse masterJob = flowResponse.getStepResponses().get("3");
+        assertTrue(masterJob.isSuccess(), "Mastering job failed");
+        assertTrue(getFinalDocCount("mdm-merged") >= 10,"At least 10 merges occur");
+        assertTrue(getFinalDocCount("master") > 0, "Documents didn't receive master collection");
+        assertEquals(209, getFinalDocCount("mdm-content"), "We end with the correct amount of final docs");
+        assertEquals(40, getFinalDocCount("mdm-notification"), "Notifications have incorrect count");
     }
 }

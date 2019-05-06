@@ -17,7 +17,6 @@ package com.marklogic.hub.step;
 
 import com.marklogic.client.DatabaseClient;
 import com.marklogic.hub.flow.*;
-import com.marklogic.hub.job.Job;
 
 
 import java.util.Collection;
@@ -88,6 +87,14 @@ public interface StepRunner {
      */
     StepRunner withOptions(Map<String, Object> options);
 
+
+    /**
+     * Sets the config to be used in orchestrating the step.
+     * @param stepConfig - the object map of configurations for the step to execute as string/object pair
+     * @return the step runner object
+     */
+    StepRunner withStepConfig(Map<String, Object> stepConfig);
+
     /**
      * Sets if this will stop the job on a failure, or if it will continue on
      * @param stopOnFailure - true to stop the job if a failure happens
@@ -140,18 +147,29 @@ public interface StepRunner {
 
     /**
      * Runs the flow and creates the job
-     * @return Job object for the flow that is run
+     * @return RunStepResponse object for the flow that is run
      */
-    Job run();
+    RunStepResponse run();
 
     /**
      * Runs the flow and creates the job. This bypasses the collector
      *
      * @param uris the ids to pass to the harmonization flow
      *
-     * @return Job object for the flow that is run
+     * @return RunStepResponse object for the flow that is run
      */
-    Job run(Collection<String> uris);
+    RunStepResponse run(Collection<String> uris);
 
-    void stop();
+    /**
+     * Stops the step run
+     *
+     */
+     void stop();
+
+    /**
+     * Returns the batch size
+     *
+     */
+     int getBatchSize();
+
 }

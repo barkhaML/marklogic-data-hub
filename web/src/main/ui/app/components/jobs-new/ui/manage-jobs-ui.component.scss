@@ -42,7 +42,7 @@ button {
   line-height: 16px;
   .job-id {
     font-size: 12px;
-    color: #666;
+    /* color: #666; */
   }
 }
 
@@ -56,13 +56,20 @@ button {
   margin-bottom: -30px;
   .filter-label {
     display: inline-block;
-    margin: 8px 10px 0 0;
+    margin: 8px 4px 0 0;
     font-size: 16px;
     font-weight: 500;
   }
+  .reset-filters-btn {
+    display: inline-block;
+    margin: 14px 0 0 0;
+    font-size: 18px;
+    font-weight: 500;
+    cursor: pointer;
+  }
   .mat-form-field {
     font-size: 14px;
-    width: 200px;
+    width: 240px;
     margin-left: 20px;
   }
 }
@@ -145,12 +152,6 @@ button {
     min-height: 64px;
   }
 
-  /* .flow {
-    position: relative;
-    cursor: pointer;
-    height: 84px;
-  } */
-
   .mat-cell {
     min-width: 0;
     display: flex;
@@ -158,14 +159,10 @@ button {
   }
 
   .mat-column-name {
-    flex: 0 1 300px;
+    flex: 0 1 340px;
   }
 
-  /* .mat-column-targetEntity {
-    flex: 0 1 120px;
-  }
-
-  .mat-column-status {
+  /* .mat-column-status {
     flex: 0 1 120px;
   }
 
@@ -235,6 +232,44 @@ button {
   cursor: pointer;
 }
 
-.capitalize {
+.capitalize:first-letter {
    text-transform: capitalize;
+}
+
+/deep/ .status-option .mat-option-text:first-letter,
+/deep/ #filter-status .mat-select-value:first-letter {
+   text-transform: capitalize !important;
+}
+
+/deep/ #job-committed-sort-btn.mat-header-cell,
+/deep/ #job-errors-sort-btn.mat-header-cell {
+  display: flex !important;
+  justify-content: flex-end !important;
+}
+
+/deep/ .mat-cell.job-committed,
+/deep/ .mat-cell.job-errors {
+  display:flex !important;
+  justify-content:flex-end !important;
+  padding-right: 20px;
+}
+
+/deep/ .mat-column-actions.mat-header-cell {
+  display: flex !important;
+  justify-content: center !important;
+}
+
+/deep/ .mat-cell.job-actions {
+  display:flex !important;
+  justify-content: center !important;
+  padding-right: 24px;
+}
+
+mat-icon.view-output {
+  font-size: 20px;
+  position: relative;
+  top: 4px;
+  color: #c00;
+  padding-left: 2px;
+  cursor: pointer;
 }

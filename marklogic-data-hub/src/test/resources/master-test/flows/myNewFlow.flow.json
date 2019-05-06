@@ -1,21 +1,41 @@
 {
   "name": "myNewFlow",
+  "options": {
+    "collections": ["myNewFlow"]
+  },
   "description": "flow description",
-  "identifier": "",
-  "batchSize": 300,
   "steps": {
     "1": {
-      "name": "ingest",
-      "type": "INGEST"
+      "stepDefinitionName": "ingest",
+      "stepDefinitionType": "INGESTION",
+      "fileLocations": {
+        "inputFilePath": "input",
+        "inputFileType": "json",
+        "outputURIReplacement": ".*/input,''"
+      },
+      "options": {
+        "sourceDatabase": "data-hub-STAGING",
+        "targetDatabase": "data-hub-STAGING",
+        "sourceQuery": null,
+        "outputFormat": "json",
+        "collections": ["default-ingestion"]
+      }
     },
     "2": {
-      "name": "mapping",
-      "type": "MAPPING"
+      "stepDefinitionName": "mapping",
+      "stepDefinitionType": "MAPPING",
+      "options": {
+        "sourceDatabase": "data-hub-STAGING",
+        "targetDatabase": "data-hub-FINAL"
+      }
     },
     "3": {
-      "name": "master",
-      "type": "MASTER",
-      "batchSize": 300
+      "stepDefinitionName": "mastering",
+      "stepDefinitionType": "MASTERING",
+      "options": {
+        "sourceDatabase": "data-hub-FINAL",
+        "targetDatabase": "data-hub-FINAL"
+      }
     }
   }
 }

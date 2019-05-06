@@ -18,8 +18,10 @@ package com.marklogic.hub.flow.impl;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.marklogic.hub.flow.Flow;
-import com.marklogic.hub.step.Step;
+import com.marklogic.hub.step.StepDefinition.StepDefinitionType;
+import com.marklogic.hub.step.impl.Step;
 import com.marklogic.hub.util.json.JSONObject;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -41,54 +43,26 @@ public class FlowImpl implements Flow {
     private Map<String, Step> steps = new LinkedHashMap<>();
 
     @JsonIgnore
-    private Integer overrideBatchSize;
-    @JsonIgnore
-    private Integer overrideThreadCount;
-    @JsonIgnore
     private Map<String, Object> overrideOptions;
     @JsonIgnore
-    private String overrideSourceDB;
-    @JsonIgnore
-    private String overrideDestDB;
+    private Map<String, Object> overrideStepConfig;
 
-    public Integer getOverrideBatchSize() {
-        return overrideBatchSize;
+
+    public Map<String, Object> getOverrideStepConfig() {
+        return this.overrideStepConfig;
     }
 
-    public void setOverrideBatchSize(Integer overrideBatchSize) {
-        this.overrideBatchSize = overrideBatchSize;
+    public void setOverrideStepConfig(Map<String, Object> overrideStepConfig) {
+        this.overrideStepConfig = overrideStepConfig;
     }
 
-    public Integer getOverrideThreadCount() {
-        return overrideThreadCount;
-    }
-
-    public void setOverrideThreadCount(Integer overrideThreadCount) {
-        this.overrideThreadCount = overrideThreadCount;
-    }
-
-    public Map<String, Object> getOverrideOptions() {
-        return overrideOptions;
-    }
 
     public void setOverrideOptions(Map<String, Object> overrideOptions) {
         this.overrideOptions = overrideOptions;
     }
-
-    public String getOverrideSourceDB() {
-        return overrideSourceDB;
-    }
-
-    public void setOverrideSourceDB(String overrideSourceDB) {
-        this.overrideSourceDB = overrideSourceDB;
-    }
-
-    public String getOverrideDestDB() {
-        return overrideDestDB;
-    }
-
-    public void setOverrideDestDB(String overrideDestDB) {
-        this.overrideDestDB = overrideDestDB;
+    
+    public Map<String, Object> getOverrideOptions() {
+        return this.overrideOptions;
     }
 
 
@@ -183,17 +157,59 @@ public class FlowImpl implements Flow {
         setOptions(jsonObject.getNode("options"));
         setStopOnError(jsonObject.getBoolean("stopOnError", DEFAULT_STOP_ONERROR));
 
-        JSONObject stepsNode = new JSONObject(jsonObject.getNode("steps"));
-        Iterator<String> iterator = jsonObject.getNode("steps").fieldNames();
-        while (iterator.hasNext()) {
-            String key = iterator.next();
-            Step step = Step.create("default", Step.StepType.CUSTOM);
-            step.deserialize(stepsNode.getNode(key));
+        JsonNode stepNode =jsonObject.getNode("steps");
+        if (stepNode != null) {
+            Iterator<String> iterator = stepNode.fieldNames();
+            while (iterator.hasNext()) {
+                String key = iterator.next();
+                Step step = Step.deserialize(stepNode.get(key));
+                steps.put(key, step);
+            }
 
-            steps.put(key, step);
+            setSteps(steps);
         }
-        setSteps(steps);
 
         return this;
+    }
+
+    @Override
+    public Step getStepById(String stepId) {
+        if (StringUtils.isEmpty(stepId)) {
+            return null;
+        }
+        String stepType = null;
+        String stepName = null;
+        //get stepDefintionType from stepId
+        if (stepId.endsWith(StepDefinitionType.INGESTION.toString())) {
+            stepType = StepDefinitionType.INGESTION.toString();
+        }
+        else if (stepId.endsWith(StepDefinitionType.MAPPING.toString())) {
+            stepType = StepDefinitionType.MAPPING.toString();
+        }
+        else if (stepId.endsWith(StepDefinitionType.MASTERING.toString())) {
+            stepType = StepDefinitionType.MASTERING.toString();
+        }
+        else if (stepId.endsWith(StepDefinitionType.CUSTOM.toString())) {
+            stepType = StepDefinitionType.CUSTOM.toString();
+        }
+
+        if (stepType != null) {
+            if (stepId.startsWith("default-")) {
+                stepName = stepId;
+            }
+            else if (stepId.length() > stepType.length() + 1) {
+                stepName = stepId.substring(0, stepId.length() - stepType.length() - 1);
+            }
+        }
+
+        if (!StringUtils.isEmpty(stepName) && !StringUtils.isEmpty(stepType)) {
+            String finalStepName = stepName;
+            String finalStepType = stepType;
+            return this.steps.values().stream()
+                .filter(s -> s.getName().equalsIgnoreCase(finalStepName) && s.getStepDefinitionType().toString().equalsIgnoreCase(finalStepType))
+                .findFirst().get();
+        }
+
+        return null;
     }
 }

@@ -4,22 +4,22 @@ const datahub = new DataHub();
 
 function transform(context, params, content) {
 
-  let flowName = params['flow-name'] ? xdmp.urlDecode(params['flow-name']) : "default-ingest";
+  let flowName = params['flow-name'] ? xdmp.urlDecode(params['flow-name']) : "default-ingestion";
   let flow = datahub.flow.getFlow(flowName);
   if (!flow) {
     datahub.debug.log({message: params, type: 'error'});
-    fn.error(null, "RESTAPI-SRVEXERR", "The specified flow " + flowName + " is missing.");
+    fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([404, "Not Found","The specified flow " + flowName + " is missing."]));
   }
 
   let step = params['step'] ? xdmp.urlDecode(params['step']) : null;
   let stepObj = flow.steps[step];
   if(!stepObj) {
     datahub.debug.log({message: params, type: 'error'});
-    fn.error(null, "RESTAPI-SRVEXERR", "The specified step "+ step + "is missing in  " + flowName);
+    fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([404, "Not Found", "The specified step "+ step + " is missing in  " + flowName]));
   }
-  if(! stepObj.type.toLowerCase() === "ingest"){
+  if(! stepObj.stepDefinitionType.toLowerCase() === "ingestion"){
     datahub.debug.log({message: params, type: 'error'});
-    fn.error(null, "RESTAPI-SRVEXERR", "The specified step "+ step + "is not an ingest step");
+    fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([400, "Invalid Step Type", "The specified step "+ step + " is not an ingestion step"]));
   }
 
   let jobId = params["job-id"];
@@ -50,10 +50,10 @@ function transform(context, params, content) {
       delete doc.context;
       if (doc.type && doc.type === 'error' && doc.message) {
         datahub.debug.log(doc);
-        fn.error(null, "RESTAPI-SRVEXERR", doc.message);
+        fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([500, "Flow Error", doc.message]));
       } else if (!doc.value) {
         datahub.debug.log({message: params, type: 'error'});
-        fn.error(null, "RESTAPI-SRVEXERR", "The content was null in the flow " + flowName + " for " + doc.uri + ".");
+        fn.error(null, "RESTAPI-SRVEXERR", Sequence.from([404, "Null Content", "The content was null in the flow " + flowName + " for " + doc.uri + "."]));
       }
       else {
         docs.push(doc.value);

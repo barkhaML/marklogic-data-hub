@@ -19,7 +19,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marklogic.client.DatabaseClient;
-import com.marklogic.client.ResourceNotFoundException;
 import com.marklogic.client.datamovement.*;
 import com.marklogic.client.document.DocumentWriteOperation;
 import com.marklogic.client.document.ServerTransform;
@@ -33,18 +32,20 @@ import com.marklogic.hub.collector.DiskQueue;
 import com.marklogic.hub.collector.impl.FileCollector;
 import com.marklogic.hub.error.DataHubConfigurationException;
 import com.marklogic.hub.flow.Flow;
-import com.marklogic.hub.job.Job;
+import com.marklogic.hub.job.JobDocManager;
 import com.marklogic.hub.job.JobStatus;
-import com.marklogic.hub.job.JobUpdate;
 import com.marklogic.hub.step.*;
 import com.marklogic.hub.util.json.JSONObject;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.SystemUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -65,9 +66,10 @@ public class WriteStepRunner implements StepRunner {
     private boolean stopOnFailure = false;
     private String jobId;
     private boolean isFullOutput = false;
+    protected final Logger logger = LoggerFactory.getLogger(getClass());
 
     private String step = "1";
-
+    private static final SimpleDateFormat DATE_TIME_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
     private List<StepItemCompleteListener> stepItemCompleteListeners = new ArrayList<>();
     private List<StepItemFailureListener> stepItemFailureListeners = new ArrayList<>();
     private List<StepStatusListener> stepStatusListeners = new ArrayList<>();
@@ -77,14 +79,15 @@ public class WriteStepRunner implements StepRunner {
     private Thread runningThread = null;
     private DataMovementManager dataMovementManager = null;
     private WriteBatcher writeBatcher = null;
-    private String filePath = null;
-    private JobUpdate jobUpdate ;
+    private String inputFilePath = null;
+    private JobDocManager jobDocManager;
     private String outputCollections;
     private String outputPermissions;
-    private String inputFormat;
-    private String outputFormat;
-    private String outputUriReplace;
+    private String inputFileType;
+    private String outputURIReplacement;
     private AtomicBoolean isStopped = new AtomicBoolean(false);
+    private IngestionStepDefinitionImpl stepDef;
+    private Map<String, Object> stepConfig = new HashMap<>();
 
     public WriteStepRunner(HubConfig hubConfig) {
         this.hubConfig = hubConfig;
@@ -107,6 +110,11 @@ public class WriteStepRunner implements StepRunner {
         return this;
     }
 
+    public StepRunner withStepDefinition(StepDefinition stepDefinition){
+        this.stepDef = (IngestionStepDefinitionImpl) stepDefinition;
+        return this;
+    }
+
     @Override
     public StepRunner withBatchSize(int batchSize) {
         this.batchSize = batchSize;
@@ -121,7 +129,7 @@ public class WriteStepRunner implements StepRunner {
 
     @Override
     public StepRunner withSourceClient(DatabaseClient stagingClient) {
-        this.stagingClient = stagingClient;
+        //no op for WriteStepRunner
         return this;
     }
 
@@ -129,7 +137,7 @@ public class WriteStepRunner implements StepRunner {
     public StepRunner withDestinationDatabase(String destinationDatabase) {
         this.destinationDatabase = destinationDatabase;
         //will work only for final db in addition to staging db as it has flow/step artifacts
-        this.stagingClient = hubConfig.newStagingClient(destinationDatabase);
+        this.stagingClient = hubConfig.newStagingClient(this.destinationDatabase);
         return this;
     }
 
@@ -142,23 +150,36 @@ public class WriteStepRunner implements StepRunner {
     @Override
     public StepRunner withOptions(Map<String, Object> options) {
         if(flow == null){
-            throw new DataHubConfigurationException("Flow and Step has to be set before setting options");
+            throw new DataHubConfigurationException("Flow has to be set before setting options");
         }
         ObjectMapper mapper = new ObjectMapper();
+        Map<String, Object> stepDefMap = null;
+        if(stepDef != null) {
+            stepDefMap = mapper.convertValue(stepDef.getOptions(), Map.class);
+        }
         Map<String, Object> stepMap = mapper.convertValue(this.flow.getStep(step).getOptions(), Map.class);
         Map<String,Object> flowMap = mapper.convertValue(flow.getOptions(), Map.class);
-        Map combinedOptions = new HashMap<>();
-        //TODO: Get options from processors to override
-        if(stepMap != null){
-            combinedOptions.putAll(stepMap);
+        Map<String, Object> combinedOptions = new HashMap<>();
+
+        if(stepDefMap != null){
+            combinedOptions.putAll(stepDefMap);
         }
         if(flowMap != null) {
             combinedOptions.putAll(flowMap);
+        }
+        if(stepMap != null){
+            combinedOptions.putAll(stepMap);
         }
         if(options != null) {
             combinedOptions.putAll(options);
         }
         this.options = combinedOptions;
+        return this;
+    }
+
+    @Override
+    public StepRunner withStepConfig(Map<String, Object> stepConfig) {
+        this.stepConfig = stepConfig;
         return this;
     }
 
@@ -209,13 +230,16 @@ public class WriteStepRunner implements StepRunner {
     }
 
     @Override
-    public Job run() {
+    public int getBatchSize(){
+        return this.batchSize;
+    }
+
+    @Override
+    public RunStepResponse run() {
         runningThread = null;
-        Job job = createJob();
-        jobUpdate = new JobUpdate(hubConfig.newJobDbClient());
-        if (options == null || options.get("inputFilePath") == null) {
-            throw new RuntimeException("File type and location cannot be empty");
-        }
+        RunStepResponse runStepResponse = StepRunnerUtil.createStepResponse(flow, step, jobId);
+        jobDocManager = new JobDocManager(hubConfig.newJobDbClient());
+
         JsonNode comboOptions = null;
         try {
             comboOptions = JSONObject.readInput(JSONObject.writeValueAsString(options));
@@ -224,55 +248,105 @@ public class WriteStepRunner implements StepRunner {
         }
         JSONObject obj = new JSONObject(comboOptions);
 
-        filePath = obj.getString("inputFilePath");
-        inputFormat = obj.getString("inputFileType");
-        outputFormat = obj.getString("outputFormat");
-        outputCollections = StringUtils.join(obj.getArrayString("collections"), ",");
-        outputPermissions = (String) options.get("outputPermissions");
-        outputUriReplace = obj.getString("outputURIReplacement");
+
+        if (obj.getArrayString("collections") != null) {
+            outputCollections = StringUtils.join(obj.getArrayString("collections"), ",");
+        }
+        if (obj.getString("permissions") != null) {
+            outputPermissions = obj.getString("permissions");
+        }
+        if (obj.getString("targetDatabase") != null) {
+            this.withDestinationDatabase(obj.getString("targetDatabase"));
+        }
+
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, Object> stepDefFileLocation = new HashMap<>();
+        Map<String, Object> stepFileLocation = new HashMap<>();
+        Map<String, Object> fileLocation = new HashMap<>();
+        if(stepDef.getFileLocations() != null) {
+            stepDefFileLocation = mapper.convertValue(stepDef.getFileLocations(), Map.class);
+            fileLocation.putAll(stepDefFileLocation);
+        }
+        if(flow.getStep(step).getFileLocations() != null) {
+            stepFileLocation =  mapper.convertValue(flow.getStep(step).getFileLocations(), Map.class);
+            fileLocation.putAll(stepFileLocation);
+        }
+
+        inputFilePath = (String)fileLocation.get("inputFilePath");
+        inputFileType = (String)fileLocation.get("inputFileType");
+        outputURIReplacement = (String)fileLocation.get("outputURIReplacement");
+
+        if(stepConfig.get("batchSize") != null){
+            this.batchSize = Integer.parseInt(stepConfig.get("batchSize").toString());
+        }
+        if(stepConfig.get("threadCount") != null) {
+            this.threadCount = Integer.parseInt(stepConfig.get("threadCount").toString());
+        }
+        if(stepConfig.get("fileLocations") != null) {
+            HashMap<String, String> fileLocations = (HashMap) stepConfig.get("fileLocations");
+            if(fileLocations.get("inputFilePath") != null) {
+                this.inputFilePath = fileLocations.get("inputFilePath");
+            }
+            if(fileLocations.get("inputFileType") != null){
+                this.inputFileType = fileLocations.get("inputFileType");
+            }
+            if(fileLocations.get("outputURIReplacement") != null) {
+                this.outputURIReplacement = fileLocations.get("outputURIReplacement");
+            }
+        }
+
+        if (inputFilePath == null || inputFileType == null) {
+            throw new RuntimeException("File path and type cannot be empty");
+        }
         options.put("flow", this.flow.getName());
 
         Collection<String> uris = null;
         //If current step is the first run step, a job doc is created
-        try{
-            jobUpdate.getJobs(jobId);
-        }
-        catch(ResourceNotFoundException e) {
-            jobUpdate.postJobs(jobId,flow.getName());
-        }
         try {
-            jobUpdate.postJobs(jobId, JobStatus.RUNNING_PREFIX + step, step);
+            StepRunnerUtil.initializeStepRun(jobDocManager, runStepResponse, flow, step, jobId);
         }
-        catch (Exception ex) {
-            throw ex;
+        catch (Exception e){
+            throw e;
         }
+
         try {
             uris = runFileCollector();
         } catch (Exception e) {
-            e.printStackTrace();
-            job.setCounts(0,0, 0, 0, 0)
-                .withStatus(JobStatus.FAILED.toString());
+            runStepResponse.setCounts(0,0, 0, 0, 0)
+                .withStatus(JobStatus.FAILED_PREFIX + step);
             StringWriter errors = new StringWriter();
             e.printStackTrace(new PrintWriter(errors));
-            job.withStepOutput(errors.toString());
-            //TODO: create job doc if not present
+            runStepResponse.withStepOutput(errors.toString());
+            JsonNode jobDoc = null;
             try {
-                jobUpdate.postJobs(jobId, JobStatus.FAILED_PREFIX + step, step);
+                jobDoc = jobDocManager.postJobs(jobId, JobStatus.FAILED_PREFIX + step, step, null, runStepResponse);
             }
             catch (Exception ex) {
                 throw ex;
             }
-            return job;
+            //If not able to read the step resp from the job doc, send the in-memory resp without start/end time
+            try {
+                return StepRunnerUtil.getResponse(jobDoc, step);
+            }
+            catch (Exception ex)
+            {
+                return runStepResponse;
+            }
         }
-        this.runIngester(job,uris);
-        return job;
+        return this.runIngester(runStepResponse,uris);
     }
 
     @Override
-    public Job run(Collection<String> uris) {
+    public RunStepResponse run(Collection<String> uris) {
         runningThread = null;
-        Job job = createJob();
-        return this.runIngester(job,uris);
+        RunStepResponse runStepResponse = StepRunnerUtil.createStepResponse(flow, step, jobId);
+        try {
+            StepRunnerUtil.initializeStepRun(jobDocManager, runStepResponse, flow, step, jobId);
+        }
+        catch (Exception e){
+            throw e;
+        }
+        return this.runIngester(runStepResponse,uris);
     }
 
     @Override
@@ -284,11 +358,11 @@ public class WriteStepRunner implements StepRunner {
     }
 
     private Collection<String> runFileCollector() throws Exception {
-        FileCollector c = new FileCollector(filePath, inputFormat);
+        FileCollector c = new FileCollector(inputFilePath, inputFileType);
         c.setHubConfig(hubConfig);
 
         stepStatusListeners.forEach((StepStatusListener listener) -> {
-            listener.onStatusChange(this.jobId, 0, 0, 0,  "fetching files");
+            listener.onStatusChange(this.jobId, 0, JobStatus.RUNNING_PREFIX + step, 0, 0,  "fetching files");
         });
         final DiskQueue<String> uris ;
         try {
@@ -305,30 +379,36 @@ public class WriteStepRunner implements StepRunner {
         return uris;
     }
 
-    private Job runIngester(Job job, Collection<String> uris) {
+    private RunStepResponse runIngester(RunStepResponse runStepResponse, Collection<String> uris) {
         AtomicLong successfulEvents = new AtomicLong(0);
         AtomicLong failedEvents = new AtomicLong(0);
         AtomicLong successfulBatches = new AtomicLong(0);
         AtomicLong failedBatches = new AtomicLong(0);
 
         stepStatusListeners.forEach((StepStatusListener listener) -> {
-            listener.onStatusChange(job.getJobId(), 0, 0, 0, "starting step execution");
+            listener.onStatusChange(runStepResponse.getJobId(), 0, JobStatus.RUNNING_PREFIX + step, 0, 0, "starting step execution");
         });
         if ( !isStopped.get() && (uris == null || uris.size() == 0 )) {
             stepStatusListeners.forEach((StepStatusListener listener) -> {
-                listener.onStatusChange(job.getJobId(), 100, 0, 0, "provided file path returned 0 items");
+                listener.onStatusChange(runStepResponse.getJobId(), 100, JobStatus.COMPLETED_PREFIX + step, 0, 0, "provided file path returned 0 items");
             });
             stepFinishedListeners.forEach((StepFinishedListener::onStepFinished));
-            job.setCounts(0,0,0,0,0);
-            job.withStatus(JobStatus.COMPLETED_PREFIX + step);
+            runStepResponse.setCounts(0,0,0,0,0);
+            runStepResponse.withStatus(JobStatus.COMPLETED_PREFIX + step);
+            JsonNode jobDoc;
             try {
-                jobUpdate.postJobs(jobId, JobStatus.COMPLETED_PREFIX + step, step);
+                jobDoc = jobDocManager.postJobs(jobId, JobStatus.COMPLETED_PREFIX + step, step, step, runStepResponse);
             }
             catch (Exception e) {
                 throw e;
             }
-
-            return job;
+            try {
+                return StepRunnerUtil.getResponse(jobDoc, step);
+            }
+            catch (Exception ex)
+            {
+                return runStepResponse;
+            }
         }
 
         Vector<String> errorMessages = new Vector<>();
@@ -350,31 +430,32 @@ public class WriteStepRunner implements StepRunner {
         writeBatcher = dataMovementManager.newWriteBatcher()
             .withBatchSize(batchSize)
             .withThreadCount(threadCount)
-            .withJobId(job.getJobId())
+            .withJobId(runStepResponse.getJobId())
             .withTransform(serverTransform)
             .onBatchSuccess(batch ->{
-                successfulEvents.addAndGet(batch.getItems().length );
+                //TODO: There is one additional item returned, it has to be investigated
+                successfulEvents.addAndGet(batch.getItems().length-1);
                 successfulBatches.addAndGet(1);
                 runStatusListener(successfulBatches.get()+failedBatches.get(), batchCount, successfulEvents, failedEvents);
                 if (stepItemCompleteListeners.size() > 0) {
                     Arrays.stream(batch.getItems()).forEach((WriteEvent e) -> {
                         stepItemCompleteListeners.forEach((StepItemCompleteListener listener) -> {
-                            listener.processCompletion(job.getJobId(), e.getTargetUri());
+                            listener.processCompletion(runStepResponse.getJobId(), e.getTargetUri());
                         });
                     });
                 }
             })
             .onBatchFailure((batch, ex) -> {
-                failedEvents.addAndGet(batch.getItems().length);
+                failedEvents.addAndGet(batch.getItems().length-1);
                 failedBatches.addAndGet(1);
                 runStatusListener(successfulBatches.get()+failedBatches.get(), batchCount, successfulEvents, failedEvents);
                 if (errorMessages.size() < MAX_ERROR_MESSAGES) {
-                    errorMessages.add(ex.toString());
+                    errorMessages.add(ex.getLocalizedMessage());
                 }
                 if(stepItemFailureListeners.size() > 0) {
                     Arrays.stream(batch.getItems()).forEach((WriteEvent e) -> {
                         stepItemFailureListeners.forEach((StepItemFailureListener listener) -> {
-                            listener.processFailure(job.getJobId(), e.getTargetUri());
+                            listener.processFailure(runStepResponse.getJobId(), e.getTargetUri());
                         });
                     });
                 }
@@ -401,12 +482,20 @@ public class WriteStepRunner implements StepRunner {
             metadataHandle.withCollections(outputCollections.split(","));
         }
 
-        if(flow.getName().equals("default-ingest")) {
-            metadataHandle.withCollections("default-ingest");
+        if(flow.getName().equals("default-ingestion")) {
+            metadataHandle.withCollections("default-ingestion");
         }
+        // Set metadata values
+        DocumentMetadataHandle.DocumentMetadataValues metadataValues = metadataHandle.getMetadataValues();
+        metadataValues.add("datahubCreatedByJob", jobId);
+        metadataValues.add("datahubCreatedInFlow", flow.getName());
+        metadataValues.add("datahubCreatedByStep", flow.getStep(step).getStepDefinitionName());
+        // TODO createdOn/createdBy data may not be accurate enough. Unfortunately REST transforms don't allow for writing metadata
+        metadataValues.add("datahubCreatedOn", DATE_TIME_FORMAT.format(new Date()));
+        metadataValues.add("datahubCreatedBy", this.hubConfig.getFlowOperatorUserName());
         writeBatcher.withDefaultMetadata(metadataHandle);
         Format format = null;
-        switch (inputFormat.toLowerCase()) {
+        switch (inputFileType.toLowerCase()) {
             case "xml":
                 format = Format.XML;
                 break;
@@ -416,7 +505,7 @@ public class WriteStepRunner implements StepRunner {
             case "csv":
                 format = Format.JSON;
                 break;
-            case "txt":
+            case "text":
                 format = Format.TEXT;
                 break;
             default:
@@ -440,60 +529,87 @@ public class WriteStepRunner implements StepRunner {
         }
 
         runningThread = new Thread(() -> {
-            writeBatcher.flushAndWait();
+            try {
+                writeBatcher.flushAndWait();
+            }
+            catch (IllegalStateException e) {
+                logger.error("WriteBatcher has been stopped");
+            }
+
+            String stepStatus;
+            if (failedEvents.get() > 0 && stopOnFailure) {
+                stepStatus = JobStatus.STOP_ON_ERROR_PREFIX + step;
+            } else if (isStopped.get()){
+                stepStatus = JobStatus.CANCELED_PREFIX + step;
+            } else if (failedEvents.get() > 0 && successfulEvents.get() > 0) {
+                stepStatus = JobStatus.COMPLETED_WITH_ERRORS_PREFIX + step;
+            } else if (failedEvents.get() == 0 && successfulEvents.get() > 0)  {
+                stepStatus = JobStatus.COMPLETED_PREFIX + step ;
+            } else {
+                stepStatus = JobStatus.FAILED_PREFIX + step;
+            }
 
             stepStatusListeners.forEach((StepStatusListener listener) -> {
-                listener.onStatusChange(job.getJobId(), 100, successfulEvents.get(), failedEvents.get(), "Ingestion completed");
+                listener.onStatusChange(runStepResponse.getJobId(), 100, stepStatus, successfulEvents.get(), failedEvents.get(), "Ingestion completed");
             });
 
             stepFinishedListeners.forEach((StepFinishedListener::onStepFinished));
 
             dataMovementManager.stopJob(writeBatcher);
 
-            String status;
-
-            if (failedEvents.get() > 0 && stopOnFailure) {
-                status = JobStatus.STOP_ON_ERROR_PREFIX + step;
-            } else if(isStopped.get()){
-                status = JobStatus.CANCELED_PREFIX + step;
-            } else if (failedEvents.get() > 0 && successfulEvents.get() > 0) {
-                status = JobStatus.COMPLETED_WITH_ERRORS_PREFIX + step;
-            } else if (failedEvents.get() == 0 && successfulEvents.get() > 0)  {
-                status = JobStatus.COMPLETED_PREFIX + step ;
-            } else {
-                status = JobStatus.FAILED_PREFIX + step;
-            }
-            job.setCounts(successfulEvents.get() + failedEvents.get(),successfulEvents.get(), failedEvents.get(), successfulBatches.get(), failedBatches.get());
-            job.withStatus(status);
-            jobUpdate.postJobs(jobId, status, step, status.equalsIgnoreCase(JobStatus.COMPLETED_PREFIX + step)?step:null);
+            runStepResponse.setCounts(successfulEvents.get() + failedEvents.get(),successfulEvents.get(), failedEvents.get(), successfulBatches.get(), failedBatches.get());
+            runStepResponse.withStatus(stepStatus);
             if (errorMessages.size() > 0) {
-                job.withStepOutput(errorMessages);
+                runStepResponse.withStepOutput(errorMessages);
             }
             if(isFullOutput) {
-                job.withFullOutput(fullResponse);
+                runStepResponse.withFullOutput(fullResponse);
+            }
+            JsonNode jobDoc = null;
+            try {
+                jobDoc = jobDocManager.postJobs(jobId, stepStatus, step, stepStatus.equalsIgnoreCase(JobStatus.COMPLETED_PREFIX + step) ? step : null, runStepResponse);
+            }
+            catch (Exception e) {
+                logger.error(e.getMessage());
+            }
+            if(jobDoc != null) {
+                try {
+                    RunStepResponse tempResp =  StepRunnerUtil.getResponse(jobDoc, step);
+                    runStepResponse.setStepStartTime(tempResp.getStepStartTime());
+                    runStepResponse.setStepEndTime(tempResp.getStepEndTime());
+                }
+                catch (Exception ex)
+                {
+                    logger.error(ex.getMessage());
+                }
             }
         });
 
         runningThread.start();
-        return job;
+        return runStepResponse;
     }
 
     private void addToBatcher(File file, Format fileFormat) throws  IOException{
         FileInputStream docStream = new FileInputStream(file);
-        if(inputFormat.equalsIgnoreCase("csv")) {
+        if(inputFileType.equalsIgnoreCase("csv")) {
             JacksonCSVSplitter splitter = new JacksonCSVSplitter();
             try {
-                Stream<JacksonHandle> contentStream = splitter.split(docStream);
-                Path dirPath = Paths.get(filePath);
-                String uri = null;
-                if(! dirPath.isAbsolute()) {
-                    File csvFile = new File(hubConfig.getProjectDir(), dirPath.toString());
-                    uri = generateAndEncodeURI(csvFile.getParentFile().getAbsolutePath());
-
+                if(! writeBatcher.isStopped()) {
+                    Stream<JacksonHandle> contentStream = splitter.split(docStream);
+                    String uri = file.getParent();
+                    if(SystemUtils.OS_NAME.toLowerCase().contains("windows")){
+                        uri = "/" + FilenameUtils.separatorsToUnix(StringUtils.replaceOnce(uri, ":", ""));
+                    }
+                    uri =  generateAndEncodeURI(outputURIReplace(uri)).replace("%", "%%");
+                    Stream<DocumentWriteOperation> documentStream =  DocumentWriteOperation.from(
+                        contentStream, DocumentWriteOperation.uriMaker(uri +"/%s.json"));
+                    try {
+                        writeBatcher.addAll(documentStream);
+                    }
+                    catch (IllegalStateException e) {
+                        logger.error("WriteBatcher has been stopped");
+                    }
                 }
-                Stream<DocumentWriteOperation> documentStream =  DocumentWriteOperation.from(
-                    contentStream, DocumentWriteOperation.uriMaker(outputURIReplace(uri)+"/%s.json"));
-                writeBatcher.addAll(documentStream);
             } catch (Exception e) {
                throw new RuntimeException(e);
             }
@@ -502,7 +618,19 @@ public class WriteStepRunner implements StepRunner {
             InputStreamHandle handle = new InputStreamHandle(docStream);
             handle.setFormat(fileFormat);
             try {
-                writeBatcher.add(outputURIReplace(generateAndEncodeURI(file.getAbsolutePath())), handle);
+                if(! writeBatcher.isStopped()) {
+                    try {
+                        String uri = file.getAbsolutePath();
+                        //In case of Windows, C:\\Documents\\abc.json will be converted to /c/Documents/abc.json
+                        if(SystemUtils.OS_NAME.toLowerCase().contains("windows")){
+                            uri = "/" + FilenameUtils.separatorsToUnix(StringUtils.replaceOnce(uri, ":", ""));
+                        }
+                        writeBatcher.add(generateAndEncodeURI(outputURIReplace(uri)), handle);
+                    }
+                    catch (IllegalStateException e) {
+                        logger.error("WriteBatcher has been stopped");
+                    }
+                }
             } catch (URISyntaxException e) {
                 throw new RuntimeException(e);
             }
@@ -543,12 +671,12 @@ public class WriteStepRunner implements StepRunner {
     }
 
     private String outputURIReplace(String uri) {
-        if (StringUtils.isNotEmpty(outputUriReplace)) {
-            String[] replace = outputUriReplace.split(",");
+        if (StringUtils.isNotEmpty(outputURIReplacement)) {
+            String[] replace = outputURIReplacement.split(",");
             // URI replace comes in pattern and replacement pairs.
             if (replace.length % 2 != 0) {
                 throw new IllegalArgumentException(
-                    "Invalid argument for URI replacement: " + outputUriReplace);
+                    "Invalid argument for URI replacement: " + outputURIReplacement);
             }
             // Replacement string is expected to be in ''
             for (int i = 0; i < replace.length - 1; i++) {
@@ -556,7 +684,7 @@ public class WriteStepRunner implements StepRunner {
                 if (!replacement.startsWith("'") ||
                     !replacement.endsWith("'")) {
                     throw new IllegalArgumentException(
-                        "Invalid argument for URI replacement: " + outputUriReplace);
+                        "Invalid argument for URI replacement: " + outputURIReplacement);
                 }
             }
             for (int i = 0; i < replace.length - 1; i += 2) {
@@ -573,18 +701,9 @@ public class WriteStepRunner implements StepRunner {
         if (percentComplete != previousPercentComplete && (percentComplete % 5 == 0)) {
             previousPercentComplete = percentComplete;
             stepStatusListeners.forEach((StepStatusListener listener) -> {
-                listener.onStatusChange(jobId, percentComplete, successfulEvents.get(), failedEvents.get(), "Ingesting");
+                listener.onStatusChange(jobId, percentComplete, JobStatus.RUNNING_PREFIX + step, successfulEvents.get(), failedEvents.get(), "Ingesting");
             });
         }
-    }
-
-    private Job createJob() {
-        Job job = Job.withFlow(flow);
-        if (this.jobId == null) {
-            jobId = UUID.randomUUID().toString();
-        }
-        job.withJobId(jobId);
-        return job;
     }
 
     private String jsonToString(Map map) {
@@ -595,5 +714,4 @@ public class WriteStepRunner implements StepRunner {
             throw new RuntimeException(e);
         }
     }
-
 }

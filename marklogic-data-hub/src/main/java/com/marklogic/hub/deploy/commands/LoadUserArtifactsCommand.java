@@ -97,16 +97,10 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
         DatabaseClient stagingClient = hubConfig.newStagingClient();
         DatabaseClient finalClient = hubConfig.newFinalClient();
 
-        Path userModulesPath = hubConfig.getHubPluginsDir();
-        String baseDir = userModulesPath.normalize().toAbsolutePath().toString();
         Path entitiesPath = hubConfig.getHubEntitiesDir();
         Path mappingsPath = hubConfig.getHubMappingsDir();
-        Path legacyEntitiesPath = userModulesPath.resolve("entities");
-        Path legacyMappingsPath = userModulesPath.resolve("mappings");
-
-        Path projectPath = Paths.get(hubConfig.getProjectDir());
-        Path stepPath = projectPath.resolve("steps");
-        Path flowPath = projectPath.resolve("flows");
+        Path stepDefPath = hubConfig.getStepDefinitionsDir();
+        Path flowPath = hubConfig.getFlowsDir();
 
         JSONDocumentManager finalDocMgr = finalClient.newJSONDocumentManager();
         JSONDocumentManager stagingDocMgr = stagingClient.newJSONDocumentManager();
@@ -115,8 +109,8 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
         DocumentWriteSet stagingEntityDocumentWriteSet = stagingDocMgr.newWriteSet();
         DocumentWriteSet stagingMappingDocumentWriteSet = stagingDocMgr.newWriteSet();
         DocumentWriteSet finalMappingDocumentWriteSet = finalDocMgr.newWriteSet();
-        DocumentWriteSet stagingStepDocumentWriteSet = stagingDocMgr.newWriteSet();
-        DocumentWriteSet finalStepDocumentWriteSet = finalDocMgr.newWriteSet();
+        DocumentWriteSet stagingStepDefDocumentWriteSet = stagingDocMgr.newWriteSet();
+        DocumentWriteSet finalStepDefDocumentWriteSet = finalDocMgr.newWriteSet();
         DocumentWriteSet stagingFlowDocumentWriteSet = stagingDocMgr.newWriteSet();
         DocumentWriteSet finalFlowDocumentWriteSet = finalDocMgr.newWriteSet();
         PropertiesModuleManager propertiesModuleManager = getModulesManager();
@@ -137,7 +131,7 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
         };
         ResourceToURI stepResourceToURI = new ResourceToURI(){
             public String toURI(Resource r) throws IOException {
-                return "/steps/" + r.getFile().getParentFile().getParentFile().getName() + "/" + r.getFile().getParentFile().getName() + "/" + r.getFilename();
+                return "/step-definitions/" + r.getFile().getParentFile().getParentFile().getName() + "/" + r.getFile().getParentFile().getName() + "/" + r.getFilename();
             }
         };
         EntityDefModulesFinder entityDefModulesFinder = new EntityDefModulesFinder();
@@ -146,28 +140,6 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
         FlowDefModulesFinder flowDefModulesFinder = new FlowDefModulesFinder();
         try {
             //first let's do the entities paths
-            if (legacyEntitiesPath.toFile().exists()) {
-                Files.walkFileTree(legacyEntitiesPath, new SimpleFileVisitor<Path>() {
-                    @Override
-                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                        if (isArtifactDir(dir, legacyEntitiesPath.toAbsolutePath())) {
-                            executeWalk(
-                                dir,
-                                entityDefModulesFinder,
-                                propertiesModuleManager,
-                                entityResourceToURI,
-                                "http://marklogic.com/entity-services/models",
-                                stagingEntityDocumentWriteSet,
-                                finalEntityDocumentWriteSet
-                            );
-                            return FileVisitResult.CONTINUE;
-                        }
-                        else {
-                            return FileVisitResult.CONTINUE;
-                        }
-                    }
-                });
-            }
             if (entitiesPath.toFile().exists()) {
                 Files.walkFileTree(entitiesPath, new SimpleFileVisitor<Path>() {
                     @Override
@@ -186,29 +158,6 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
                 });
             }
             //now let's do the mappings paths
-            if (legacyMappingsPath.toFile().exists()) {
-                Files.walkFileTree(legacyMappingsPath, new SimpleFileVisitor<Path>() {
-                    @Override
-                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                        if (isArtifactDir(dir, legacyMappingsPath.toAbsolutePath())) {
-                            executeWalk(
-                                dir,
-                                mappingDefModulesFinder,
-                                propertiesModuleManager,
-                                mappingResourceToURI,
-                                "http://marklogic.com/data-hub/mappings",
-                                stagingEntityDocumentWriteSet,
-                                finalEntityDocumentWriteSet
-                            );
-                            return FileVisitResult.CONTINUE;
-                        }
-                        else {
-                            return FileVisitResult.CONTINUE;
-                        }
-                    }
-                });
-            }
-
             if (mappingsPath.toFile().exists()) {
                 Files.walkFileTree(mappingsPath, new SimpleFileVisitor<Path>() {
                     @Override
@@ -220,8 +169,8 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
                                 propertiesModuleManager,
                                 mappingResourceToURI,
                                 "http://marklogic.com/data-hub/mappings",
-                                stagingEntityDocumentWriteSet,
-                                finalEntityDocumentWriteSet
+                                stagingMappingDocumentWriteSet,
+                                finalMappingDocumentWriteSet
                             );
                             return FileVisitResult.CONTINUE;
                         }
@@ -232,9 +181,9 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
                 });
             }
 
-            // let's do steps
-            if (stepPath.toFile().exists()) {
-                Files.walkFileTree(stepPath, new SimpleFileVisitor<Path>() {
+            // let's do step-definitions
+            if (stepDefPath.toFile().exists()) {
+                Files.walkFileTree(stepDefPath, new SimpleFileVisitor<Path>() {
                     @Override
                     public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
                         executeWalk(
@@ -242,9 +191,9 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
                             stepDefModulesFinder,
                             propertiesModuleManager,
                             stepResourceToURI,
-                            "http://marklogic.com/data-hub/step",
-                            stagingEntityDocumentWriteSet,
-                            finalEntityDocumentWriteSet
+                            "http://marklogic.com/data-hub/step-definition",
+                            stagingStepDefDocumentWriteSet,
+                            finalStepDefDocumentWriteSet
                         );
                         return FileVisitResult.CONTINUE;
                     }
@@ -263,8 +212,8 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
                             propertiesModuleManager,
                             flowResourceToURI,
                             "http://marklogic.com/data-hub/flow",
-                            stagingEntityDocumentWriteSet,
-                            finalEntityDocumentWriteSet
+                            stagingFlowDocumentWriteSet,
+                            finalFlowDocumentWriteSet
                         );
                         return FileVisitResult.CONTINUE;
                     }
@@ -279,9 +228,9 @@ public class LoadUserArtifactsCommand extends AbstractCommand {
                 stagingDocMgr.write(stagingMappingDocumentWriteSet);
                 finalDocMgr.write(finalMappingDocumentWriteSet);
             }
-            if (stagingStepDocumentWriteSet.size() > 0) {
-                stagingDocMgr.write(stagingStepDocumentWriteSet);
-                finalDocMgr.write(finalStepDocumentWriteSet);
+            if (stagingStepDefDocumentWriteSet.size() > 0) {
+                stagingDocMgr.write(stagingStepDefDocumentWriteSet);
+                finalDocMgr.write(finalStepDefDocumentWriteSet);
             }
             if (stagingFlowDocumentWriteSet.size() > 0) {
                 stagingDocMgr.write(stagingFlowDocumentWriteSet);

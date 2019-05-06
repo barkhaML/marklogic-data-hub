@@ -43,6 +43,7 @@ import {ROUTES} from './app.routes';
 import {AUTH_PROVIDERS} from './services/auth';
 import {CodemirrorComponent} from './components/codemirror';
 import {HeaderComponent} from './components/header/header.component';
+import {AboutDialogComponent} from "./components/header/ui/about-dialog.component";
 import {JobExportDialogComponent, JobOutputComponent, JobsComponent} from './components/jobs';
 import {JobExportUiComponent, JobOutputUiComponent, JobsUiComponent} from './components/jobs/ui';
 import {MlcpComponent} from './components/mlcp';
@@ -67,6 +68,7 @@ import {MapService} from './components/mappings/map.service';
 import {ManageFlowsService} from './components/flows-new/services/manage-flows.service';
 import {ManageJobsService} from './components/jobs-new/manage-jobs.service';
 import {ProjectService} from './services/projects';
+import { RunningJobService } from './components/jobs-new/services/running-job-service';
 import {STOMPService} from './services/stomp';
 import {ClipboardDirective} from './directives/clipboard/clipboard.directive';
 import {TraceService} from './components/traces/trace.service';
@@ -92,6 +94,7 @@ import {FolderBrowserModule} from "./components/folder-browser/folder-browser.mo
     CodemirrorComponent,
     HeaderComponent,
     HeaderUiComponent,
+    AboutDialogComponent,
     HasBugsDialogComponent,
     FlowsComponent,
     FlowsUiComponent,
@@ -158,7 +161,8 @@ import {FolderBrowserModule} from "./components/folder-browser/folder-browser.mo
     NewFlowComponent,
     NewMapComponent,
     JobOutputComponent,
-    JobExportDialogComponent
+    JobExportDialogComponent,
+    AboutDialogComponent
   ],
   imports: [
     BrowserModule,
@@ -190,6 +194,7 @@ import {FolderBrowserModule} from "./components/folder-browser/folder-browser.mo
     ManageFlowsService,
     ManageJobsService,
     ProjectService,
+    RunningJobService,
     SettingsService,
     STOMPService,
     TraceService,

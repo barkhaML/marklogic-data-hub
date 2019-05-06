@@ -16,7 +16,7 @@
 
 package com.marklogic.hub;
 
-import com.marklogic.hub.step.Step;
+import com.marklogic.hub.step.StepDefinition;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -48,11 +48,11 @@ public interface HubProject {
     Path getHubPluginsDir();
 
     /**
-     * Gets the path for the hub step directory
+     * Gets the path for the hub step-definitions directory
      *
-     * @return the path for the hub steps directory
+     * @return the path for the hub step-definitions directory
      */
-    Path getStepsDir();
+    Path getStepDefinitionsDir();
 
     /**
      * Gets the path for the hub entities directory
@@ -88,7 +88,7 @@ public interface HubProject {
      * @param type - a Step type
      * @return the path for the hub steps directory
      */
-    Path getStepsDirByType(Step.StepType type);
+    Path getStepsDirByType(StepDefinition.StepDefinitionType type);
 
     /**
      * Gets the path for the hub's config directory

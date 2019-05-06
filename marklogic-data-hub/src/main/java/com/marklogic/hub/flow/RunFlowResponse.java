@@ -1,8 +1,13 @@
 package com.marklogic.hub.flow;
 
-import com.marklogic.hub.job.Job;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.marklogic.hub.step.RunStepResponse;
+
+import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import static java.util.Optional.ofNullable;
 
 public class RunFlowResponse {
     String jobId;
@@ -10,12 +15,18 @@ public class RunFlowResponse {
     String flowName;
     String jobStatus;
     String startTime;
-    Map<String, Job> stepResponses;
+    String lastAttemptedStep;
+    String lastCompletedStep;
+    String user;
+    Map<String, RunStepResponse> stepResponses;
 
     public RunFlowResponse(String jobId) {
         this.jobId = jobId;
     }
 
+    RunFlowResponse() {}
+
+    @JsonProperty("flow")
     public String getFlowName() {
         return flowName;
     }
@@ -32,14 +43,12 @@ public class RunFlowResponse {
         this.jobStatus = jobStatus;
     }
 
+    @JsonProperty("timeStarted")
     public String getStartTime() {
         return startTime;
     }
 
-    public void setStartTime(String startTime) {
-        this.startTime = startTime;
-    }
-
+    @JsonProperty("timeEnded")
     public String getEndTime() {
         return endTime;
     }
@@ -48,11 +57,39 @@ public class RunFlowResponse {
         this.endTime = endTime;
     }
 
-    public Map<String, Job> getStepResponses() {
+    public void setStartTime(String startTime) {
+        this.startTime = startTime;
+    }
+
+    public String getLastAttemptedStep() {
+        return lastAttemptedStep;
+    }
+
+    public void setLastAttemptedStep(String lastAttemptedStep) {
+        this.lastAttemptedStep = lastAttemptedStep;
+    }
+
+    public String getLastCompletedStep() {
+        return lastCompletedStep;
+    }
+
+    public void setLastCompletedStep(String lastCompletedStep) {
+        this.lastCompletedStep = lastCompletedStep;
+    }
+
+    public String getUser() {
+        return user;
+    }
+
+    public void setUser(String user) {
+        this.user = user;
+    }
+
+    public Map<String, RunStepResponse> getStepResponses() {
         return stepResponses;
     }
 
-    public void setStepResponses(Map<String, Job> stepResponses) {
+    public void setStepResponses(Map<String, RunStepResponse> stepResponses) {
         this.stepResponses = stepResponses;
     }
 
@@ -66,11 +103,13 @@ public class RunFlowResponse {
 
     @Override
     public String toString() {
-        return String.format("{flowName: %s, jobId: %s, startTime: %s, endTime: %s, jobStatus: %s, stepResponses: %s}", flowName, jobId, startTime,
-            endTime, jobStatus, stepResponses.keySet()
-                .stream()
-                .map(key -> key + "=" + stepResponses.get(key))
-                .collect(Collectors.joining(", ", "{", "}")));
-    }
+        String stepRes = ofNullable(stepResponses).orElse(new HashMap<String, RunStepResponse>()).keySet()
+            .stream()
+            .map(key -> key + "=" + stepResponses.get(key))
+            .collect(Collectors.joining(", ", "{", "}"));
 
+        return String.format("{flowName: %s, jobId: %s, jobStatus: %s, startTime: %s, endTime: %s, stepResponses: %s}", flowName, jobId,
+            ofNullable(jobStatus).orElse(""), ofNullable(startTime).orElse(""),
+            ofNullable(endTime).orElse(""), stepRes);
+    }
 }

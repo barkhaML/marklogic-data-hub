@@ -69,9 +69,6 @@ public class EntityManagerService {
     private LegacyFlowManagerService legacyFlowManagerService;
 
     @Autowired
-    private FileSystemWatcherService watcherService;
-
-    @Autowired
     private DataHubService dataHubService;
 
     @Autowired
@@ -118,20 +115,7 @@ public class EntityManagerService {
     }
 
     public EntityModel createEntity(EntityModel newEntity) throws IOException {
-        scaffolding.createLegacyEntity(newEntity.getName());
-
-        if (newEntity.inputFlows != null) {
-            for (FlowModel flow : newEntity.inputFlows) {
-                scaffolding.createLegacyFlow(newEntity.getName(), flow.flowName, FlowType.INPUT, flow.codeFormat, flow.dataFormat);
-            }
-        }
-
-        if (newEntity.harmonizeFlows != null) {
-            for (FlowModel flow : newEntity.harmonizeFlows) {
-                scaffolding.createLegacyFlow(newEntity.getName(), flow.flowName, FlowType.HARMONIZE, flow.codeFormat, flow.dataFormat);
-            }
-        }
-
+        scaffolding.createEntity(newEntity.getName());
         return getEntity(newEntity.getName());
     }
 
@@ -158,9 +142,8 @@ public class EntityManagerService {
     }
 
     public void deleteEntity(String entity) throws IOException {
-        Path dir = hubConfig.getHubEntitiesDir().resolve(entity);
-        if (dir.toFile().exists()) {
-            watcherService.unwatch(dir.getParent().toString());
+        File entitiesFile = hubConfig.getHubEntitiesDir().resolve(entity + ENTITY_FILE_EXTENSION).toFile();
+        if (entitiesFile.exists()) {
             em.deleteEntity(entity);
         }
     }
@@ -268,7 +251,7 @@ public class EntityManagerService {
         newFlow.entityName = entityName;
         if(newFlow.mappingName != null) {
             try {
-                String mappingName = mappingManagerService.getMapping(newFlow.mappingName).getVersionedName();
+                String mappingName = mappingManagerService.getMapping(newFlow.mappingName, false).getVersionedName();
                 newFlow.mappingName = mappingName;
             } catch (DataHubProjectException e) {
                 throw new DataHubProjectException("Mapping not found in project: " + newFlow.mappingName);

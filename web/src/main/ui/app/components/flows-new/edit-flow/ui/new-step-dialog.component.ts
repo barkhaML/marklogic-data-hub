@@ -4,13 +4,14 @@ import { ManageFlowsService } from '../../services/manage-flows.service';
 import { EditFlowUiComponent } from './edit-flow-ui.component';
 import {Flow} from "../../models/flow.model";
 
-
 export interface DialogData {
   title: string;
   databases: any;
   entities: any;
   step: any;
   flow: Flow;
+  projectDirectory: string;
+  isUpdate: boolean;
 }
 @Component({
   selector: 'app-new-step-dialog',
@@ -22,6 +23,8 @@ export interface DialogData {
     [collections]="collections"
     [step]="data.step"
     [flow]="data.flow"
+    [projectDirectory]="data.projectDirectory"
+    [isUpdate]="data.isUpdate"
     (getCollections)="getCollections($event)"
     (cancelClicked)="cancelClicked()"
     (saveClicked)="saveClicked($event)"
@@ -35,9 +38,23 @@ export class NewStepDialogComponent {
     private manageFlowsService: ManageFlowsService,
     @Inject(MAT_DIALOG_DATA) public data: DialogData) {}
 
+  addStepsToCollections() {
+    let result;
+    if (this.data.flow.steps.length) {
+      result = this.data.flow.steps.map(step => {
+        return step.name;
+      });
+    }
+    return (result) ? result : [];
+  }
   getCollections(db) {
     this.manageFlowsService.getCollections(db).subscribe( resp => {
-      this.collections = resp;
+      this.collections = this.addStepsToCollections();
+      resp.map( collection => {
+        if ( !this.collections.find(item => item === collection)) {
+          this.collections.push(collection);
+        }
+      });
     });
   }
   saveClicked(newStep) {

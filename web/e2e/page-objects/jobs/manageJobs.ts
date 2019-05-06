@@ -27,7 +27,7 @@ export class ManageJobs extends AppPage {
   }
 
   flowNameFilterOptions(option: string) {
-    return element(by.css(`mat-option[ng-reflect-value="${option}"]`));
+    return element(by.cssContainingText('mat-option .mat-option-text', option)); 
   }
 
   async clickFlowNameFilterOptions(option: string) {
@@ -45,7 +45,7 @@ export class ManageJobs extends AppPage {
   }
 
   targetEntityFilterOptions(option: string) {
-    return element(by.css(`mat-option[ng-reflect-value="${option}"]`));
+    return element(by.cssContainingText('mat-option .mat-option-text', option)); 
   }
 
   async clickTargetEntityFilterOptions(option: string) {
@@ -63,7 +63,7 @@ export class ManageJobs extends AppPage {
   }
 
   statusFilterOptions(option: string) {
-    return element(by.css(`mat-option[ng-reflect-value="${option}"]`));
+    return element(by.cssContainingText('mat-option .mat-option-text', option)); 
   }
 
   async clickStatusFilterOptions(option: string) {
@@ -85,6 +85,10 @@ export class ManageJobs extends AppPage {
 
   get jobsTable() {
     return element(by.id("jobs-table"));
+  }
+
+  getJobsCount(flowName: string) {
+    return element.all(by.css(`.jobs-table mat-row.job-${flowName.toLowerCase()}`)).count();
   }
 
   flowNameRowClass(flowName: string) {
@@ -197,7 +201,7 @@ export class ManageJobs extends AppPage {
   }
 
   jobPaginationMenuOptions(option: string) {
-    return element(by.css(`mat-option[ng-reflect-value="${option}"]`)); 
+    return element(by.cssContainingText('mat-option .mat-option-text', option)); 
   }
   
   async clickJobPaginationMenuOptions(option: string) {

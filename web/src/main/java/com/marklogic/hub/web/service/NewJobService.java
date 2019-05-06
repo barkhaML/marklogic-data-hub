@@ -10,15 +10,16 @@ import com.marklogic.client.util.RequestParameters;
 import com.marklogic.hub.FlowManager;
 import com.marklogic.hub.flow.Flow;
 import com.marklogic.hub.impl.HubConfigImpl;
-import com.marklogic.hub.step.Step;
+import com.marklogic.hub.step.impl.Step;
 import com.marklogic.hub.util.json.JSONObject;
 import com.marklogic.hub.web.model.JobModel;
 import com.marklogic.hub.web.model.JobModel.JobStep;
-import java.io.IOException;
-import java.util.*;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.util.*;
 
 @Service
 public class NewJobService extends ResourceManager {
@@ -50,7 +51,7 @@ public class NewJobService extends ResourceManager {
         "      \"stepNumber\": 1,\n" +
         "      \"id\": \"default-ingest\",\n" +
         "      \"name\": \"default-ingest\",\n" +
-        "      \"type\": \"ingest\",\n" +
+        "      \"stepDefinitionType\": \"INGESTION\",\n" +
         "      \"targetEntity\": null,\n" +
         "      \"status\": \"completed step 1\",\n" +
         "      \"totalEvents\": 500,\n" +
@@ -68,7 +69,7 @@ public class NewJobService extends ResourceManager {
         "      \"stepNumber\": 2,\n" +
         "      \"id\": \"default-mapping\",\n" +
         "      \"name\": \"default-mapping\",\n" +
-        "      \"type\": \"mapping\",\n" +
+        "      \"stepDefinitionType\": \"MAPPING\",\n" +
         "      \"targetEntity\": \"order\",\n" +
         "      \"status\": \"completed step 2\",\n" +
         "      \"totalEvents\": 500,\n" +
@@ -130,19 +131,18 @@ public class NewJobService extends ResourceManager {
         this.client = hubConfig.newJobDbClient();
     }
 
-    public List<JobModel> getJobs() throws IOException {
+    public List<JobModel> getJobs(String flowId) throws IOException {
         // temporarily send static job payload to client
         /*ObjectMapper mapper = new ObjectMapper();
         List<JobModel> jobModels = mapper.readValue(JOB_RESPONSE, List.class);*/
 
+        if (StringUtils.isNotEmpty(flowId)) {
+            return getJobs(flowId, null);
+        }
         List<String> flowNames = flowManager.getFlowNames();
         List<JobModel> jobModels = new ArrayList<>();
         flowNames.forEach(f -> jobModels.addAll(getJobs(f, null)));
         return jobModels;
-    }
-
-    public List<JobModel> getJobs(String jobId) {
-        return getJobs(null, jobId);
     }
 
     public List<JobModel> getJobs(String flowName, String jobId) {
@@ -184,14 +184,22 @@ public class NewJobService extends ResourceManager {
 
     private void createJobs(List<JobModel> jobModels, JSONObject jobJson) {
         JobModel jm = new JobModel();
+        String flowName = jobJson.getString("flow");
+        if (StringUtils.isEmpty(flowName)) {
+            return;
+        }
+        Flow flow = flowManager.getFlow(flowName);
+        if (flow == null) {
+            return;
+        }
+
         jobModels.add(jm);
-        jm.id = jobJson.getString("id");
+        jm.id = jobJson.getString("jobId");
         jm.flowId = jobJson.getString("flow");
-        jm.flowName = jobJson.getString("flow");
+        jm.flowName = flowName;
         jm.user = jobJson.getString("user", "");
         jm.status = jobJson.getString("jobStatus", "");
 
-        Flow flow = flowManager.getFlow(jm.flowName);
         Map<String, Step> steps = flow.getSteps();
         jm.startTime = jobJson.getString("timeStarted", "");
         jm.endTime = jobJson.getString("timeEnded", "");
@@ -213,13 +221,15 @@ public class NewJobService extends ResourceManager {
             JobStep js = new JobStep();
             js.stepNumber = Integer.valueOf(key);
             js.name = step.getName();
-            js.type = step.getType().toString();
+            js.stepDefinitionName = step.getStepDefinitionName();
+            js.stepDefinitionType = step.getStepDefinitionType().toString();
             if (js.name.startsWith("default-")) {
                 js.id = js.name;
             } else {
-                js.id = step.getName() + "-" + js.type;
+                js.id = step.getName() + "-" + js.stepDefinitionType;
             }
             Optional.ofNullable(step.getOptions()).ifPresent(o -> js.targetEntity = ((TextNode) o.getOrDefault("targetEntity", new TextNode(""))).asText());
+            Optional.ofNullable(step.getOptions()).ifPresent(o -> js.targetDatabase = ((TextNode) o.getOrDefault("targetDatabase", new TextNode(""))).asText());
 
             JsonNode res = stepRes.get(key);
             js.totalEvents = res.get("totalEvents").asLong();
@@ -232,6 +242,13 @@ public class NewJobService extends ResourceManager {
             js.successfulBatches = res.get("successfulBatches").asLong();
             js.failedBatches = res.get("failedBatches").asLong();
             js.success = res.get("success").asBoolean();
+
+            if (res.get("stepStartTime") != null) {
+                js.startTime = res.get("stepStartTime").asText();
+            }
+            if (res.get("stepEndTime") != null) {
+                js.endTime = res.get("stepEndTime").asText();
+            }
 
             js.status = res.get("status").asText();
             js.stepOutput = res.get("stepOutput");
