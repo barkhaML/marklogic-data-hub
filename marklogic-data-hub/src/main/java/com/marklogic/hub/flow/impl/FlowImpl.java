@@ -177,39 +177,7 @@ public class FlowImpl implements Flow {
         if (StringUtils.isEmpty(stepId)) {
             return null;
         }
-        String stepType = null;
-        String stepName = null;
-        //get stepDefintionType from stepId
-        if (stepId.endsWith(StepDefinitionType.INGESTION.toString())) {
-            stepType = StepDefinitionType.INGESTION.toString();
-        }
-        else if (stepId.endsWith(StepDefinitionType.MAPPING.toString())) {
-            stepType = StepDefinitionType.MAPPING.toString();
-        }
-        else if (stepId.endsWith(StepDefinitionType.MASTERING.toString())) {
-            stepType = StepDefinitionType.MASTERING.toString();
-        }
-        else if (stepId.endsWith(StepDefinitionType.CUSTOM.toString())) {
-            stepType = StepDefinitionType.CUSTOM.toString();
-        }
 
-        if (stepType != null) {
-            if (stepId.startsWith("default-")) {
-                stepName = stepId;
-            }
-            else if (stepId.length() > stepType.length() + 1) {
-                stepName = stepId.substring(0, stepId.length() - stepType.length() - 1);
-            }
-        }
-
-        if (!StringUtils.isEmpty(stepName) && !StringUtils.isEmpty(stepType)) {
-            String finalStepName = stepName;
-            String finalStepType = stepType;
-            return this.steps.values().stream()
-                .filter(s -> s.getName().equalsIgnoreCase(finalStepName) && s.getStepDefinitionType().toString().equalsIgnoreCase(finalStepType))
-                .findFirst().get();
-        }
-
-        return null;
+        return steps.get(stepId);
     }
 }

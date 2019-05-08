@@ -10,6 +10,8 @@ import ingestStepPage from '../../page-objects/steps/ingestStep';
 import mappingStepPage from '../../page-objects/steps/mappingStep';
 import masteringStepPage from '../../page-objects/steps/masteringStep';
 import manageJobsPage from '../../page-objects/jobs/manageJobs';
+import jobDetailsPage from '../../page-objects/jobs/jobDetails';
+import browsePage from '../../page-objects/browse/browse';
 
 export default function(qaProjectDir) {
     describe('E2E Simple JSON', () => {
@@ -70,6 +72,7 @@ export default function(qaProjectDir) {
             await appPage.flowsTab.click();
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
             await manageFlowPage.clickFlowname("SimpleJSONFlow");
+            browser.sleep(5000);
             browser.wait(EC.elementToBeClickable(editFlowPage.newStepButton));
             await editFlowPage.clickNewStepButton();
             browser.wait(EC.visibilityOf(stepsPage.stepDialogBoxHeader("New Step")));
@@ -81,28 +84,33 @@ export default function(qaProjectDir) {
             await stepsPage.setStepDescription("Ingest SimpleJSON docs");
             await stepsPage.clickStepCancelSave("save");
             browser.wait(EC.visibilityOf(stepsPage.stepDetailsName));
+            browser.sleep(3000);
             await expect(stepsPage.stepDetailsName.getText()).toEqual("SimpleJSONIngest");
             await ingestStepPage.setInputFilePath(qaProjectDir + "/input/mastering-data");
-            // bug on advance settings with different db name
-            await stepsPage.clickStepMenu();
             browser.sleep(3000);
-            browser.wait(EC.elementToBeClickable(stepsPage.stepMenuEditOption));
-            await stepsPage.clickStepMenuEditOption();
-            browser.wait(EC.elementToBeClickable(stepsPage.advSettingsExpandCollapse));
-            await stepsPage.clickAdvSettingsExpandCollapse();
-            browser.wait(EC.elementToBeClickable(stepsPage.stepTargetDatabaseDropDown));
-            await stepsPage.clickStepTargetDatabaseDropDown();
-            browser.wait(EC.elementToBeClickable(stepsPage.stepTargetDatabaseOptions("data-hub-qa-STAGING")));
-            await stepsPage.clickStepTargetDatabaseOption("data-hub-qa-STAGING");
-            await stepsPage.clickStepCancelSave("save");
-            browser.wait(EC.visibilityOf(stepsPage.stepDetailsName));
-            // ***
             await editFlowPage.clickRunFlowButton();
             browser.wait(EC.visibilityOf(editFlowPage.runFlowHeader));
             await editFlowPage.clickButtonRunCancel("flow");
             browser.wait(EC.visibilityOf(editFlowPage.finishedLatestJobStatus));
             browser.sleep(5000);
-            await appPage.flowsTab.click();
+            // Verify on Job Detail page
+            await editFlowPage.clickFinishedLatestJobStatus();
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobDetailsPageHeader));
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobSummary));
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobDetailsTable));
+            await expect(jobDetailsPage.jobSummaryFlowName.getText()).toEqual("SimpleJSONFlow");
+            await expect(jobDetailsPage.jobSummaryJobId.getText()).not.toBeNull;
+            await expect(jobDetailsPage.stepName("SimpleJSONIngest").getText()).toEqual("SimpleJSONIngest");
+            await expect(jobDetailsPage.stepStatus("SimpleJSONIngest").getText()).toEqual("Completed step 1");
+            await expect(jobDetailsPage.stepCommitted("SimpleJSONIngest").getText()).toEqual("6");   
+            await jobDetailsPage.clickStepCommitted("SimpleJSONIngest");
+            // Verify on Browse Data page
+            browser.wait(EC.visibilityOf(browsePage.resultsPagination()));
+            browser.sleep(5000);
+            expect(browsePage.resultsPagination().getText()).toContain('Showing Results 1 to 6 of 6');
+            await expect(browsePage.facetName("SimpleJSONIngest").getText()).toEqual("SimpleJSONIngest");
+            // Verify on Manage Flows page
+            await appPage.flowsTab.click()
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
             await expect(manageFlowPage.status("SimpleJSONFlow").getText()).toEqual("Finished");
             await expect(manageFlowPage.docsCommitted("SimpleJSONFlow").getText()).toEqual("6");
@@ -111,9 +119,8 @@ export default function(qaProjectDir) {
         it('should create mapping step and run the flow', async function() {
             await appPage.flowsTab.click();
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
-            browser.sleep(10000);
-            browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
             await manageFlowPage.clickFlowname("SimpleJSONFlow");
+            browser.sleep(5000);
             browser.wait(EC.elementToBeClickable(editFlowPage.newStepButton));
             await editFlowPage.clickNewStepButton();
             browser.wait(EC.visibilityOf(stepsPage.stepDialogBoxHeader("New Step")));
@@ -133,7 +140,7 @@ export default function(qaProjectDir) {
             await stepsPage.clickStepTargetEntityOption("SimpleJSON");
             await stepsPage.clickStepCancelSave("save");
             browser.wait(EC.visibilityOf(stepsPage.stepDetailsName));
-            //await stepsPage.clickStepSelectContainer("SimpleJSONMapping");
+            browser.sleep(3000);
             // Mapping the source to entity
             // Map prop1 to id
             browser.wait(EC.visibilityOf(mappingStepPage.sourcePropertyContainer("id")));
@@ -150,7 +157,6 @@ export default function(qaProjectDir) {
             await mappingStepPage.clickSourcePropertyContainer("lastname");
             browser.wait(EC.visibilityOf(mappingStepPage.propertySelectMenu("lastname")));
             await mappingStepPage.clickMapSourceProperty("prop3", "lastname");
-            // ***
             browser.sleep(10000);
             // Redeploy
             await appPage.flowsTab.click();
@@ -161,9 +167,8 @@ export default function(qaProjectDir) {
             browser.sleep(15000);
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
             await manageFlowPage.clickFlowname("SimpleJSONFlow");
+            browser.sleep(5000);
             browser.wait(EC.elementToBeClickable(editFlowPage.newStepButton));
-            //await stepsPage.clickStepSelectContainer("SimpleJSONMapping");
-            // ***
             await editFlowPage.clickRunFlowButton();
             browser.wait(EC.visibilityOf(editFlowPage.runFlowHeader));
             // unselect run all
@@ -172,6 +177,23 @@ export default function(qaProjectDir) {
             await editFlowPage.clickButtonRunCancel("flow");
             browser.wait(EC.visibilityOf(editFlowPage.finishedLatestJobStatus));
             browser.sleep(5000);
+            // Verify on Job Detail page
+            await editFlowPage.clickFinishedLatestJobStatus();
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobDetailsPageHeader));
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobSummary));
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobDetailsTable));
+            await expect(jobDetailsPage.jobSummaryFlowName.getText()).toEqual("SimpleJSONFlow");
+            await expect(jobDetailsPage.jobSummaryJobId.getText()).not.toBeNull;
+            await expect(jobDetailsPage.stepName("SimpleJSONMapping").getText()).toEqual("SimpleJSONMapping");
+            await expect(jobDetailsPage.stepStatus("SimpleJSONMapping").getText()).toEqual("Completed step 2");
+            await expect(jobDetailsPage.stepCommitted("SimpleJSONMapping").getText()).toEqual("6");   
+            await jobDetailsPage.clickStepCommitted("SimpleJSONMapping");
+            // Verify on Browse Data page
+            browser.wait(EC.visibilityOf(browsePage.resultsPagination()));
+            browser.sleep(5000);
+            expect(browsePage.resultsPagination().getText()).toContain('Showing Results 1 to 6 of 6');
+            await expect(browsePage.facetName("SimpleJSONMapping").getText()).toEqual("SimpleJSONMapping");
+            // Verify on Manage Flows page
             await appPage.flowsTab.click();
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
             await expect(manageFlowPage.status("SimpleJSONFlow").getText()).toEqual("Finished");
@@ -181,8 +203,8 @@ export default function(qaProjectDir) {
         it('should create mastering step and run the flow', async function() {
             await appPage.flowsTab.click();
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
-            browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
             await manageFlowPage.clickFlowname("SimpleJSONFlow");
+            browser.sleep(5000);
             browser.wait(EC.elementToBeClickable(editFlowPage.newStepButton));
             await stepsPage.clickStepSelectContainer("SimpleJSONMapping");
             await editFlowPage.clickNewStepButton();
@@ -203,7 +225,7 @@ export default function(qaProjectDir) {
             await stepsPage.clickStepTargetEntityOption("SimpleJSON");
             await stepsPage.clickStepCancelSave("save");
             browser.wait(EC.visibilityOf(stepsPage.stepDetailsName));
-            //await stepsPage.clickStepSelectContainer("SimpleJSONMastering");
+            browser.sleep(3000);
             await expect(stepsPage.stepDetailsName.getText()).toEqual("SimpleJSONMastering");
             // Configure matching and merging
             // Add matching option for id
@@ -214,16 +236,18 @@ export default function(qaProjectDir) {
             await masteringStepPage.clickMatchOptionDialogPropertyOption("id");
             await masteringStepPage.setMatchOptionDialogWeight(10);
             await masteringStepPage.clickMatchOptionCancelSave("save");
+            browser.sleep(3000);
             // Add matching threshold
             await masteringStepPage.clickMatchThresholdsAddButton();
             browser.wait(EC.visibilityOf(masteringStepPage.matchThresholdDialog));
-            await masteringStepPage.setMatchThresholdDialogName("Definite Match");
+            await masteringStepPage.setMatchThresholdDialogName("DefiniteMatch");
             await masteringStepPage.setMatchThresholdDialogWeight(5);
             await masteringStepPage.clickMatchThresholdDialogActionMenu();
             browser.wait(EC.elementToBeClickable(masteringStepPage.matchThresholdDialogActionOptions("Merge")));
             await masteringStepPage.clickMatchThresholdDialogActionOptions("Merge");
             await masteringStepPage.clickMatchThresholdCancelSaveButton("save");
             browser.wait(EC.visibilityOf(stepsPage.stepDetailsName));
+            browser.sleep(3000);
             // Redeploy
             await appPage.flowsTab.click();
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
@@ -233,9 +257,8 @@ export default function(qaProjectDir) {
             browser.sleep(15000);
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
             await manageFlowPage.clickFlowname("SimpleJSONFlow");
+            browser.sleep(5000);
             browser.wait(EC.elementToBeClickable(editFlowPage.newStepButton));
-            //await stepsPage.clickStepSelectContainer("SimpleJSONMastering");
-            // ***
             await editFlowPage.clickRunFlowButton();
             browser.wait(EC.visibilityOf(editFlowPage.runFlowHeader));
             // unselect run all
@@ -244,6 +267,28 @@ export default function(qaProjectDir) {
             await editFlowPage.clickButtonRunCancel("flow");
             browser.wait(EC.visibilityOf(editFlowPage.finishedLatestJobStatus));
             browser.sleep(5000);
+            // Verify on Job Detail page
+            await editFlowPage.clickFinishedLatestJobStatus();
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobDetailsPageHeader));
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobSummary));
+            browser.wait(EC.visibilityOf(jobDetailsPage.jobDetailsTable));
+            await expect(jobDetailsPage.jobSummaryFlowName.getText()).toEqual("SimpleJSONFlow");
+            await expect(jobDetailsPage.jobSummaryJobId.getText()).not.toBeNull;
+            await expect(jobDetailsPage.stepName("SimpleJSONMastering").getText()).toEqual("SimpleJSONMastering");
+            await expect(jobDetailsPage.stepStatus("SimpleJSONMastering").getText()).toEqual("Completed step 3");
+            await expect(jobDetailsPage.stepCommitted("SimpleJSONMastering").getText()).toEqual("6");   
+            await jobDetailsPage.clickStepCommitted("SimpleJSONMastering");
+            // Verify on Browse Data page
+            browser.wait(EC.visibilityOf(browsePage.resultsPagination()));
+            browser.sleep(5000);
+            expect(browsePage.resultsPagination().getText()).toContain('Showing Results 1 to 8 of 8');
+            await expect(browsePage.facetName("SimpleJSONMastering").getText()).toEqual("SimpleJSONMastering");
+            await expect(browsePage.facetName("mdm-merged").getText()).toEqual("mdm-merged");
+            await expect(browsePage.facetCount("mdm-merged")).toEqual("1");
+            await expect(browsePage.facetCount("mdm-content")).toEqual("4");
+            await expect(browsePage.facetCount("mdm-auditing")).toEqual("1");
+            await expect(browsePage.facetCount("mdm-archived")).toEqual("3");
+            // Verify on Manage Flows page
             await appPage.flowsTab.click();
             browser.wait(EC.visibilityOf(manageFlowPage.flowName("SimpleJSONFlow")));
             await expect(manageFlowPage.status("SimpleJSONFlow").getText()).toEqual("Finished");

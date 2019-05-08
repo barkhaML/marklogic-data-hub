@@ -32,6 +32,7 @@ import com.marklogic.hub.collector.DiskQueue;
 import com.marklogic.hub.collector.impl.FileCollector;
 import com.marklogic.hub.error.DataHubConfigurationException;
 import com.marklogic.hub.flow.Flow;
+import com.marklogic.hub.impl.HubConfigImpl;
 import com.marklogic.hub.job.JobDocManager;
 import com.marklogic.hub.job.JobStatus;
 import com.marklogic.hub.step.*;
@@ -83,6 +84,7 @@ public class WriteStepRunner implements StepRunner {
     private JobDocManager jobDocManager;
     private String outputCollections;
     private String outputPermissions;
+    private String outputFormat;
     private String inputFileType;
     private String outputURIReplacement;
     private AtomicBoolean isStopped = new AtomicBoolean(false);
@@ -258,6 +260,9 @@ public class WriteStepRunner implements StepRunner {
         if (obj.getString("targetDatabase") != null) {
             this.withDestinationDatabase(obj.getString("targetDatabase"));
         }
+        if (obj.getString("outputFormat") != null) {
+            outputFormat = obj.getString("outputFormat");
+        }
 
         ObjectMapper mapper = new ObjectMapper();
         Map<String, Object> stepDefFileLocation = new HashMap<>();
@@ -293,6 +298,9 @@ public class WriteStepRunner implements StepRunner {
             if(fileLocations.get("outputURIReplacement") != null) {
                 this.outputURIReplacement = fileLocations.get("outputURIReplacement");
             }
+        }
+        if(stepConfig.get("stopOnFailure") != null){
+            this.withStopOnFailure(Boolean.parseBoolean(stepConfig.get("stopOnFailure").toString()));
         }
 
         if (inputFilePath == null || inputFileType == null) {
@@ -492,7 +500,7 @@ public class WriteStepRunner implements StepRunner {
         metadataValues.add("datahubCreatedByStep", flow.getStep(step).getStepDefinitionName());
         // TODO createdOn/createdBy data may not be accurate enough. Unfortunately REST transforms don't allow for writing metadata
         metadataValues.add("datahubCreatedOn", DATE_TIME_FORMAT.format(new Date()));
-        metadataValues.add("datahubCreatedBy", this.hubConfig.getFlowOperatorUserName());
+        metadataValues.add("datahubCreatedBy", ((HubConfigImpl) hubConfig).getMlUsername());
         writeBatcher.withDefaultMetadata(metadataHandle);
         Format format = null;
         switch (inputFileType.toLowerCase()) {
@@ -514,6 +522,8 @@ public class WriteStepRunner implements StepRunner {
         final Format fileFormat = format;
         Iterator itr = uris.iterator();
         if(!isStopped.get()){
+            JobTicket jobTicket = dataMovementManager.startJob(writeBatcher);
+            ticketWrapper.put("jobTicket", jobTicket);
             while(itr.hasNext()) {
                 try {
                     File file = new File((String) itr.next());
@@ -523,9 +533,6 @@ public class WriteStepRunner implements StepRunner {
                     throw new RuntimeException(e);
                 }
             }
-            JobTicket jobTicket = dataMovementManager.startJob(writeBatcher);
-            ticketWrapper.put("jobTicket", jobTicket);
-
         }
 
         runningThread = new Thread(() -> {
@@ -602,7 +609,7 @@ public class WriteStepRunner implements StepRunner {
                     }
                     uri =  generateAndEncodeURI(outputURIReplace(uri)).replace("%", "%%");
                     Stream<DocumentWriteOperation> documentStream =  DocumentWriteOperation.from(
-                        contentStream, DocumentWriteOperation.uriMaker(uri +"/%s.json"));
+                        contentStream, DocumentWriteOperation.uriMaker(uri +"/%s." + ("xml".equalsIgnoreCase(outputFormat) ? "xml":"json")));
                     try {
                         writeBatcher.addAll(documentStream);
                     }

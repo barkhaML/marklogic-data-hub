@@ -179,7 +179,9 @@ class Flow {
       options.collections,
       ((stepRef.options || {}).collections || (stepDetails.options || {}).collections),
       (flow.options || {}).collections
-    ].reduce((previousValue, currentValue) => (previousValue || []).concat((currentValue || [])));
+    ].reduce((previousValue, currentValue) => (previousValue || []).concat((currentValue || [])))
+      // filter out any null/empty collections that may exist
+      .filter((col) => !!col);
     this.globalContext.targetDatabase = combinedOptions.targetDatabase || this.globalContext.targetDatabase;
     this.globalContext.sourceDatabase = combinedOptions.sourceDatabase || this.globalContext.sourceDatabase;
 
@@ -210,9 +212,10 @@ class Flow {
       );
     }
 
+    let writeTransactionInfo = {};
     //let's update our jobdoc now
     if (!combinedOptions.noWrite) {
-      this.datahub.hubUtils.writeDocuments(this.writeQueue, 'xdmp.defaultPermissions()', collections, this.globalContext.targetDatabase);
+      writeTransactionInfo = this.datahub.hubUtils.writeDocuments(this.writeQueue, 'xdmp.defaultPermissions()', collections, this.globalContext.targetDatabase);
     }
     for (let content of this.writeQueue) {
       let info = {
@@ -232,7 +235,7 @@ class Flow {
           batchStatus = "failed";
         }
       }
-      this.datahub.jobs.updateBatch(this.globalContext.jobId, this.globalContext.batchId, batchStatus, uris, this.globalContext.batchErrors[0]);
+      this.datahub.jobs.updateBatch(this.globalContext.jobId, this.globalContext.batchId, batchStatus, uris, writeTransactionInfo, this.globalContext.batchErrors[0]);
     }
 
     let resp = {
@@ -265,15 +268,19 @@ class Flow {
     }
 
       let hookOperation = function() {};
-      let hook = processor.customHook;
+      let hook = step.customHook;
+      if(!hook || !hook.module){
+        hook = processor.customHook;
+      }
       if (hook && hook.module) {
-        let parameters = Object.assign({uris}, processor.customHook.parameters);
+        // Include all of the step context in the parameters for the custom hook to make use of
+        let parameters = Object.assign({uris, content, options, flowName, stepNumber, step}, hook.parameters);
         hookOperation = function () {
           flowInstance.datahub.hubUtils.invoke(
             hook.module,
             parameters,
             hook.user || xdmp.getCurrentUser(),
-            hook.runBefore ? flowInstance.globalContext.sourceDatabase : this.globalContext.targetDatabase
+            hook.runBefore ? flowInstance.globalContext.sourceDatabase : flowInstance.globalContext.targetDatabase
           );
         }
       }

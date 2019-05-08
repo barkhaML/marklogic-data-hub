@@ -167,14 +167,10 @@ public class FlowStepModel {
             sm.id = step.getName() + "-" + stepType;
             sm.stepKey = name;
             sm.name = stepName;
-            if (sm.name.startsWith("default-")) {
-                sm.id = sm.name;
-            } else {
-                sm.id = sm.name + "-" + stepType;
-            }
+            sm.id = sm.name + "-" + stepType;
             sm.stepDefinitionType = stepType;
             if (step.getOptions() != null && step.getOptions().get("targetEntity") != null &&
-                                                step.getOptions().get("targetEntity") instanceof TextNode) {
+                step.getOptions().get("targetEntity") instanceof TextNode) {
                 TextNode node = (TextNode) step.getOptions().get("targetEntity");
                 sm.targetEntity = node.asText();
             }
@@ -188,18 +184,20 @@ public class FlowStepModel {
     }
 
     public void setJobs(FlowJobs flowJobs, boolean fromRunFlow) {
-        this.jobIds = flowJobs.jobIds;
-        if (latestJob != null && latestJob.id != null && !this.jobIds.contains(latestJob.id)) {
-            this.jobIds.add(latestJob.id);
-            flowJobs.jobIds = this.jobIds;
-            flowJobs.latestJob = latestJob;
-            return;
+        if(flowJobs != null) {
+            this.jobIds = flowJobs.jobIds;
+            if (latestJob != null && latestJob.id != null && !this.jobIds.contains(latestJob.id)) {
+                this.jobIds.add(latestJob.id);
+                flowJobs.jobIds = this.jobIds;
+                flowJobs.latestJob = latestJob;
+                return;
+            }
+            if (fromRunFlow) {
+                //reset the latestJob info for until the running flow starts with a new jobId
+                flowJobs.latestJob = null;
+            }
+            this.latestJob = flowJobs.latestJob;
         }
-        if (fromRunFlow) {
-            //reset the latestJob info for until the running flow starts with a new jobId
-            flowJobs.latestJob = null;
-        }
-        this.latestJob = flowJobs.latestJob;
     }
 
     //for testing purpose

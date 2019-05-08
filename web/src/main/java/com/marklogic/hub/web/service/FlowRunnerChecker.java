@@ -6,32 +6,38 @@ import com.marklogic.hub.job.JobStatus;
 import com.marklogic.hub.step.RunStepResponse;
 import com.marklogic.hub.util.json.JSONObject;
 import com.marklogic.hub.web.model.FlowJobModel.LatestJob;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class FlowRunnerChecker {
     protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+
+    static class StepCounters {
+        long successfulEvents;
+        long failedEvents;
+
+        public StepCounters(long successfulEvents, long failedEvents) {
+            this.successfulEvents = successfulEvents;
+            this.failedEvents = failedEvents;
+        }
+    }
 
     private static FlowRunnerChecker instance;
     private FlowRunnerImpl flowRunner;
     private LatestJob latestJob;
-    private Set<String> completedSteps;
+    private Map<String, StepCounters> completedSteps;
 
     private FlowRunnerChecker(FlowRunnerImpl flowRunner) {
         latestJob = new LatestJob();
-        completedSteps = new HashSet<>();
+        completedSteps = new HashMap<>();
         this.flowRunner = flowRunner;
         flowRunner.onStatusChanged((jobId, step, jobStatus, percentComplete, successfulEvents, failedEvents, message) -> {
             latestJob.id = jobId;
-            if (step.getName().startsWith("default-")) {
-                latestJob.stepId = step.getName();
-            } else {
-                latestJob.stepId = step.getName() + "-" + step.getStepDefinitionType();
-            }
+            latestJob.stepId = step.getName() + "-" + step.getStepDefinitionType();
             latestJob.stepName = step.getName();
             latestJob.stepRunningPercent = percentComplete;
 
@@ -47,7 +53,7 @@ public class FlowRunnerChecker {
             if (stepResponseByKey != null) {
                 RunStepResponse stepJob = stepResponseByKey.get(flowRunner.getRunningStepKey());
                 if (stepJob != null) {
-                    latestJob.status = StringUtils.isEmpty(latestJob.status) ? stepJob.getStatus() : latestJob.status;
+                    latestJob.status = StringUtils.isNotEmpty(stepJob.getStatus()) && !JobStatus.isJobDone(latestJob.status) ? stepJob.getStatus() : latestJob.status;
                     if (stepJob.getStepOutput() != null) {
                         JSONObject jsonObject = new JSONObject();
                         jsonObject.putArray("output", stepJob.getStepOutput());
@@ -57,11 +63,19 @@ public class FlowRunnerChecker {
                 }
             }
 
-            if (StringUtils.isNotEmpty(latestJob.status) && latestJob.status.startsWith(JobStatus.COMPLETED_PREFIX)) {
-                if (!completedSteps.contains(latestJob.status)) {
-                    latestJob.successfulEvents += successfulEvents;
-                    latestJob.failedEvents += failedEvents;
-                    completedSteps.add(latestJob.status);
+            if (StringUtils.isNotEmpty(latestJob.status)) {
+                if (latestJob.status.startsWith(JobStatus.RUNNING_PREFIX)) {
+                    latestJob.successfulEvents = successfulEvents;
+                    latestJob.failedEvents = failedEvents;
+                }
+                else if (JobStatus.isStepDone(latestJob.status) || JobStatus.isJobDone(latestJob.status)) {
+                    completedSteps.putIfAbsent(latestJob.stepId, new StepCounters(successfulEvents, failedEvents));
+                    latestJob.successfulEvents = 0;
+                    latestJob.failedEvents = 0;
+                    completedSteps.values().forEach(c -> {
+                        latestJob.successfulEvents += c.successfulEvents;
+                        latestJob.failedEvents += c.failedEvents;
+                    });
                 }
             }
             logger.debug(latestJob.toString());
@@ -81,7 +95,7 @@ public class FlowRunnerChecker {
         if (!flowRunner.isJobRunning() && StringUtils.isNotEmpty(latestJob.endTime)) {
             LatestJob retJob = latestJob;
             latestJob = new LatestJob();
-            completedSteps = new HashSet<>();
+            completedSteps = new HashMap<>();
             return retJob;
         }
         return latestJob;

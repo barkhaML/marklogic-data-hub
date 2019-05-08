@@ -6,6 +6,7 @@ import {
   ExistingStepNameValidator
 } from "../../../common/form-validators/existing-step-name-validator";
 import {Flow} from "../../models/flow.model";
+import * as _ from 'lodash';
 
 @Component({
   selector: 'app-new-step-dialog-ui',
@@ -166,6 +167,13 @@ export class NewStepDialogUiComponent implements OnInit {
     } else {
       this.newStep.stepDefinitionName = 'default-' + (this.newStepForm.value.stepDefinitionType || '').toLowerCase();
     }
+
+    if (this.newStep.stepDefinitionType === this.stepType.INGESTION) {
+      let collection = (this.isUpdate) ? this.newStepForm.getRawValue().name : this.newStepForm.value.name;
+      // always a single collection based on the step name
+      this.newStep.options.collections = [ collection ];
+    }
+
     this.newStep.description = this.newStepForm.value.description;
     this.newStep.selectedSource = this.newStepForm.value.selectedSource;
     if (this.newStep.selectedSource === 'query') {

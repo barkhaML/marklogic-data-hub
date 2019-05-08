@@ -16,19 +16,25 @@ import com.marklogic.hub.step.impl.Step;
 import com.marklogic.hub.util.json.JSONObject;
 import com.marklogic.hub.web.model.FlowJobModel.FlowJobs;
 import com.marklogic.hub.web.model.FlowJobModel.LatestJob;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import javax.xml.bind.DatatypeConverter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import javax.xml.bind.DatatypeConverter;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
+
 
 @Service
 public class FlowJobService extends ResourceManager {
     private static final String ML_JOBS_NAME = "ml:jobs";
+
+    protected final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     @Autowired
     private FlowManager flowManager;
@@ -38,19 +44,25 @@ public class FlowJobService extends ResourceManager {
 
     private DatabaseClient client;
 
-    //use a cache with ttl 30 minutes or longer to reduce frequency for fetching data from DB
+    //use a cache with ttl 5 minutes to reduce frequency for fetching data from DB
     public final Cache<String, FlowJobs> cachedJobsByFlowName = CacheBuilder.newBuilder().expireAfterWrite(
-        30, TimeUnit.MINUTES).build();
+        5, TimeUnit.MINUTES).build();
 
     public FlowJobService() {
         super();
+        if (hubConfig != null) {
+            this.setupClient();
+        }
     }
 
-    public void setupClient() {
+    private void setupClient() {
         this.client = hubConfig.newJobDbClient();
     }
 
     public FlowJobs getJobs(String flowName) {
+        if (this.client == null) {
+            this.setupClient();
+        }
         try {
             return cachedJobsByFlowName.get(flowName, () -> {
                 client.init(ML_JOBS_NAME, this);
@@ -86,7 +98,8 @@ public class FlowJobService extends ResourceManager {
                             lastTime[0] = currStartTime;
                             lastTime[1] = currEndTime;
                             lastJob[0] = jobJson.jsonNode();
-                        } else {
+                        }
+                        else {
                             try {
                                 int cmp = DatatypeConverter.parseDateTime(lastTime[0]).getTime().compareTo(DatatypeConverter.parseDateTime(currStartTime).getTime());
                                 if (cmp < 0) {
@@ -94,14 +107,16 @@ public class FlowJobService extends ResourceManager {
                                     lastTime[1] = currEndTime;
                                     //lastJobId[0] = jobId;
                                     lastJob[0] = jobJson.jsonNode();
-                                } else if (cmp == 0) { //compare end time just in case
+                                }
+                                else if (cmp == 0) { //compare end time just in case
                                     if (DatatypeConverter.parseDateTime(lastTime[1]).getTime().compareTo(DatatypeConverter.parseDateTime(currEndTime).getTime()) < 0) {
                                         lastTime[0] = currStartTime;
                                         lastTime[1] = currEndTime;
                                         lastJob[0] = jobJson.jsonNode();
                                     }
                                 }
-                            } catch (Exception e) {
+                            }
+                            catch (Exception e) {
                                 //ignore, maybe log
                             }
                         }
@@ -123,7 +138,7 @@ public class FlowJobService extends ResourceManager {
                 String stepKey = Integer.compare(Integer.valueOf(completedKey), Integer.valueOf(attemptedKey)) < 0 ? attemptedKey : completedKey;
                 Optional.ofNullable(steps.get(stepKey)).ifPresent(s -> {
                     latestJob.stepName = s.getName();
-                    latestJob.stepId = s.getName().startsWith("default-") ? s.getName() : s.getName() + "-" + s.getStepDefinitionType();
+                    latestJob.stepId = s.getName() + "-" + s.getStepDefinitionType();
                 });
 
                 JsonNode stepRes = jobJson.getNode("stepResponses");
@@ -138,17 +153,31 @@ public class FlowJobService extends ResourceManager {
 
                 return flowJobs;
             });
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
 
-        } finally {
+        }
+        finally {
             if (cachedJobsByFlowName.getIfPresent(flowName) == null) {
                 cachedJobsByFlowName.invalidate(flowName);
             }
+            this.release();
         }
         return cachedJobsByFlowName.getIfPresent(flowName);
     }
 
-    public void release() {
-        this.client.release();
+    //TODO: fix this whole client mess and properly report exceptions
+    private void release() {
+        if (this.client != null) {
+            try {
+                this.client.release();
+            }
+            catch (Exception e) {
+                logger.error(e.getMessage());
+            }
+            finally {
+                this.client = null;
+            }
+        }
     }
 }
